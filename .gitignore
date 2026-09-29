@@ -53,3 +53,21 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+
+# markdown files
+*.md
+
+# pyc files
+*.pyc
+*.gz
+*.pkl*
+*.npy
+*.gzip
+*.bz2
+*.npy.z
+*.lzma
+*joblib*
+.venv-pico-model*
+*.json
+*ipynb
