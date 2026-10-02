@@ -55,8 +55,6 @@ dkms.conf
 *.dwo
 
 
-# markdown files
-*.md
 
 # pyc files
 *.pyc
