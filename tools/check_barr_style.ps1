@@ -4,16 +4,25 @@ param()
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-# First-party embedded sources and generated declarations only. The large
+# This is a clang-format gate for the listed first-party files. It does not
+# verify all BARR-C:2018 rules; see the enforcement kit coverage map and review
+# checklist for rules that require static analysis or human review. The large
 # generated model table is excluded from formatting checks.
 $styleFiles = @(
-    'firmware/main.cpp',
-    'firmware/generated/generated_models.h',
-    'rmii/examples/analyzer/main.cpp',
-    'rmii/examples/analyzer/analyzer.cpp',
+    'rmii/examples/analyzer/main.c',
+    'rmii/examples/analyzer/main.h',
+    'rmii/examples/analyzer/c99_static_assert_compat.h',
+    'rmii/examples/analyzer/analyzer.c',
     'rmii/examples/analyzer/analyzer.h',
-    'rmii/examples/httpd/main.c',
+    'tools/batch_fixture_replay.c',
+    'firmware/generated_batch/generated_batch_models.h',
     'rmii/src/rmii_ethernet.c',
+    'rmii/src/sdcard_fs.c',
+    'rmii/src/sdcard_diskio.c',
+    'rmii/src/sdcard.c',
+    'rmii/src/include/sdcard.h',
+    'rmii/src/include/sdcard_fs.h',
+    'rmii/src/include/rmii_ethernet.h',
     'rmii/src/include/rmii_ethernet/netif.h',
     'rmii/src/lwip/sys_arch.c',
     'rmii/src/lwip/lwipopts.h',
@@ -66,4 +75,4 @@ finally {
     Pop-Location
 }
 
-Write-Output "clang-format check passed for $($styleFiles.Count) scoped files."
+Write-Output "clang-format check passed for $($styleFiles.Count) scoped files; this is not full BARR-C:2018 conformance verification."

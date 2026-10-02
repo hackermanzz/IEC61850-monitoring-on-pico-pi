@@ -111,6 +111,14 @@ def convert(
                 event["smpcnt_modulus"] = str(topo.get("smpcnt_modulus", ""))
                 event["no_asdu"] = raw.get("noASDU", "")
                 event["sv_fault"] = bit(raw.get("sv_fault", ""))
+                event["conf_rev"] = raw.get("confRev", "")
+                event["smp_synch"] = raw.get("smpSynch", "")
+                event["appid"] = raw.get("appID", raw.get("appid", ""))
+                # Trusted expected values are optional topology metadata. They
+                # let the model detect an unexpected stream identity/config,
+                # while blank fields preserve compatibility with old topology.
+                event["expected_conf_rev"] = str(topo.get("expected_conf_rev", ""))
+                event["expected_appid"] = str(topo.get("expected_appid", ""))
             result.append(event)
     unmatched = [index for index, count in enumerate(match_count) if count == 0]
     if unmatched:

@@ -54,7 +54,7 @@ dkms.conf
 # debug information files
 *.dwo
 
-
+*.ps1
 # markdown files
 *.md
 
@@ -71,3 +71,12 @@ dkms.conf
 .venv-pico-model*
 *.json
 *ipynb
+*.pcap
+!IEC61850_RF_training.ipynb
+
+rf_batch_models/
+rf_notebook_run*.log
+/rmii/build-sdcard-*/
+
+
+*.model

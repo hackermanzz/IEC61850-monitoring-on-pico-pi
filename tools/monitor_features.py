@@ -17,8 +17,11 @@ EVENT_COLUMNS = (
     "capture_id", "scenario_id", "protocol", "timestamp", "src_mac",
     "expected_src_mac", "stream_id", "bus_id", "sv_reference_stream", "st_num", "sq_num",
     "smp_cnt", "smpcnt_modulus", "no_asdu", "trip_asserted", "sv_fault", "restart_authorized", "attack",
-    "label_source",
+    "label_source", "conf_rev", "smp_synch", "appid",
+    "expected_conf_rev", "expected_appid",
 )
+OPTIONAL_EVENT_COLUMNS = ("conf_rev", "smp_synch", "appid", "expected_conf_rev", "expected_appid")
+REQUIRED_EVENT_COLUMNS = tuple(name for name in EVENT_COLUMNS if name not in OPTIONAL_EVENT_COLUMNS)
 
 GOOSE_FEATURES = (
     "dt", "dt_ratio", "stnum_delta", "stnum_decrease", "sqnum_delta",
@@ -27,6 +30,10 @@ GOOSE_FEATURES = (
 SV_FEATURES = (
     "smpcnt_delta", "smpcnt_delta_abs", "smpcnt_back",
     "smpcnt_delta_roll_std", "dt", "dt_roll_med", "dt_ratio", "noASDU",
+    "smpcnt_missing", "noASDU_missing", "conf_rev_changed", "conf_rev_mismatch",
+    "conf_rev_missing", "conf_rev_expected_missing", "smp_synch_0", "smp_synch_1",
+    "smp_synch_2", "smp_synch_other", "smp_synch_missing", "appid_mismatch",
+    "appid_missing", "appid_expected_missing",
     "publisher_mismatch", "history_ready",
 )
 
@@ -49,6 +56,16 @@ def _integer(value: str | None) -> int | None:
     return int(result)
 
 
+def _protocol_integer(value: str | None) -> int | None:
+    """Parse a decoded integer that may be written as decimal or 0x-prefixed hex."""
+    if value is None or str(value).strip() == "":
+        return None
+    text = str(value).strip()
+    if text.lower().startswith("0x"):
+        return int(text, 16)
+    return _integer(text)
+
+
 def _bit(value: str | None) -> int | None:
     if value is None or str(value).strip() == "":
         return None
@@ -62,10 +79,16 @@ def _bit(value: str | None) -> int | None:
 def read_events(path: str | Path) -> list[dict[str, str]]:
     with open(path, newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
-        missing = set(EVENT_COLUMNS) - set(reader.fieldnames or ())
+        missing = set(REQUIRED_EVENT_COLUMNS) - set(reader.fieldnames or ())
         if missing:
             raise ValueError(f"event CSV is missing columns: {sorted(missing)}")
         rows = list(reader)
+    # These protocol fields were not exported by older notebook versions.
+    # Missing fields remain explicit so downstream features can distinguish
+    # absent decoder data from a protocol value of zero.
+    for row in rows:
+        for field in OPTIONAL_EVENT_COLUMNS:
+            row.setdefault(field, "")
     if not rows:
         raise ValueError("event CSV is empty")
     for index, row in enumerate(rows, 2):
@@ -93,7 +116,7 @@ def compute_features(
         key=lambda pair: (pair[1]["capture_id"], float(pair[1]["timestamp"]), pair[0]),
     )
     state: dict[tuple, dict] = defaultdict(
-        lambda: {"ts": None, "st": None, "sq": None, "smp": None,
+        lambda: {"ts": None, "st": None, "sq": None, "smp": None, "conf_rev": None,
                  "intervals": deque(maxlen=20), "smp_deltas": deque(maxlen=20)}
     )
     last_sv: dict[tuple[str, str], tuple[float, int]] = {}
@@ -105,7 +128,11 @@ def compute_features(
         src = row["src_mac"].lower().strip()
         expected = row["expected_src_mac"].lower().strip()
         stream = row["stream_id"]
-        key = (capture, protocol, stream, src)
+        # An SV Ethernet frame may carry many ASDUs whose smpCnt values are
+        # not a single sequence. Track each position across frames instead of
+        # comparing unrelated ASDUs inside the same frame.
+        asdu_index = _integer(row.get("asdu_index")) if protocol == "SV" else None
+        key = (capture, protocol, stream, src, asdu_index)
         previous = state[key]
         prior_ts = previous["ts"]
         dt = None if prior_ts is None else timestamp - prior_ts
@@ -119,6 +146,10 @@ def compute_features(
             "row_index": row_index, "capture_id": capture,
             "scenario_id": row["scenario_id"], "protocol": protocol,
             "attack": label, "label_source": row["label_source"],
+            "frame_index": row.get("frame_index", ""),
+            "asdu_index": asdu_index if asdu_index is not None else "",
+            "source_pcap": row.get("source_pcap", ""),
+            "frame_length": row.get("frame_length", ""),
         }
         accept_for_state = True
         if protocol == "GOOSE":
@@ -162,6 +193,14 @@ def compute_features(
             modulus = _integer(row.get("smpcnt_modulus"))
             if modulus is not None and modulus < 2:
                 raise ValueError("smpcnt_modulus must be at least 2")
+            conf_rev = _integer(row.get("conf_rev"))
+            old_conf_rev = previous["conf_rev"]
+            smp_synch = _integer(row.get("smp_synch"))
+            appid = _protocol_integer(row.get("appid"))
+            expected_conf_rev = _protocol_integer(row.get("expected_conf_rev"))
+            expected_appid = _protocol_integer(row.get("expected_appid"))
+            conf_rev_mismatch = conf_rev is not None and expected_conf_rev is not None and conf_rev != expected_conf_rev
+            appid_mismatch = appid is not None and expected_appid is not None and appid != expected_appid
             wrap_band = min(max_smp_delta, max(1, modulus // 16)) if modulus else 0
             wrapped = bool(
                 old_smp is not None and smp is not None and modulus is not None
@@ -178,14 +217,39 @@ def compute_features(
                 "dt_roll_med": prior_med if prior_med is not None else 0.0,
                 "dt_ratio": dt_ratio,
                 "noASDU": _integer(row["no_asdu"]) or 0,
+                "smpcnt_missing": int(smp is None),
+                "noASDU_missing": int(_integer(row["no_asdu"]) is None),
+                "conf_rev_changed": int(conf_rev is not None and old_conf_rev is not None and conf_rev != old_conf_rev),
+                "conf_rev_mismatch": int(conf_rev_mismatch),
+                "conf_rev_missing": int(conf_rev is None),
+                "conf_rev_expected_missing": int(expected_conf_rev is None),
+                "smp_synch_0": int(smp_synch == 0),
+                "smp_synch_1": int(smp_synch == 1),
+                "smp_synch_2": int(smp_synch == 2),
+                "smp_synch_other": int(smp_synch is not None and smp_synch not in {0, 1, 2}),
+                "smp_synch_missing": int(smp_synch is None),
+                "appid_mismatch": int(appid_mismatch),
+                "appid_missing": int(appid is None),
+                "appid_expected_missing": int(expected_appid is None),
                 "publisher_mismatch": mismatch,
                 "history_ready": int(prior_ts is not None and old_smp is not None),
             })
-            accept_for_state = not (raw_delta < 0 and not wrapped) and 0 <= delta <= max_smp_delta and not mismatch
+            # Missing counters and events that violate trusted publisher/config
+            # baselines must not advance or erase the trusted rolling state.
+            accept_for_state = (
+                smp is not None
+                and not (raw_delta < 0 and not wrapped)
+                and 0 <= delta <= max_smp_delta
+                and not mismatch
+                and not conf_rev_mismatch
+                and not appid_mismatch
+            )
             if old_smp is not None and accept_for_state:
                 previous["smp_deltas"].append(delta)
             if accept_for_state:
                 previous["smp"] = smp
+                if conf_rev is not None:
+                    previous["conf_rev"] = conf_rev
             fault = _bit(row["sv_fault"])
             if accept_for_state and fault is not None:
                 last_sv[(capture, stream)] = (timestamp, fault)
