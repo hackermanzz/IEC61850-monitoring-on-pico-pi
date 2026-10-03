@@ -1,0 +1,3 @@
+# Local CMake build directories. These are generated and must not be committed.
+/build*/
+/CMakeFiles/
