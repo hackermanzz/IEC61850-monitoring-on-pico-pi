@@ -27,8 +27,8 @@
 "4uJEvlz36hz1\n" \
 "-----END CERTIFICATE-----\n\0"
 
-#define TELEBOT_TOKEN           "8818859723:AAE4ci1E0s54DjOBfu5jI99U_hn0as2BN48"
-#define CHATID                  "PassiveIEC61850MonitorNotifbot"
+#define TELEBOT_TOKEN           "PUT STUFF HERE"
+#define CHATID                  "PUT STUFF HERE"
 #define MESSAGE                 "test"
 
 
