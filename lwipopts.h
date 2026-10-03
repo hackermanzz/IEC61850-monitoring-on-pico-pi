@@ -17,7 +17,10 @@
 #endif
 #define MEM_ALIGNMENT               4
 #ifndef MEM_SIZE
-#define MEM_SIZE                    12000
+#define MEM_SIZE                    (32 * 1024)
+#endif
+#ifndef MEMP_NUM_ALTCP_PCB
+#define MEMP_NUM_ALTCP_PCB          4
 #endif
 #define MEMP_NUM_TCP_SEG            48
 #define MEMP_NUM_ARP_QUEUE          10
@@ -26,7 +29,7 @@
 #define LWIP_ETHERNET               1
 #define LWIP_ICMP                   1
 #define LWIP_RAW                    1
-#define TCP_WND                     (8 * TCP_MSS)
+#define TCP_WND                     (12 * TCP_MSS)
 #define TCP_MSS                     1460
 #define TCP_SND_BUF                 (8 * TCP_MSS)
 #define TCP_SND_QUEUELEN            ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
@@ -50,8 +53,11 @@
 #define DHCP_DOES_ARP_CHECK         0
 #define LWIP_DHCP_DOES_ACD_CHECK    0
 
-#ifndef NDEBUG
+/* Keep TLS diagnostics enabled in Release builds while troubleshooting. */
 #define LWIP_DEBUG                  1
+#define ALTCP_MBEDTLS_DEBUG         LWIP_DBG_ON
+
+#ifndef NDEBUG
 #define LWIP_STATS                  1
 #define LWIP_STATS_DISPLAY          1
 #endif

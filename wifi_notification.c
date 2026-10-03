@@ -13,6 +13,7 @@
 #include "mbedtls/x509_crt.h"
 #include "mbedtls/error.h"
 
+
 static struct altcp_pcb* https_pcb = NULL;
 static struct altcp_tls_config* config =  NULL;
 static volatile bool request_complete = false;
@@ -52,65 +53,79 @@ void callback_gethostbyname(
 }
 
 bool connect_to_host(ip_addr_t* ipaddr) {
-    u8_t ca_cert[] = CA_ROOT_CERT;
-    size_t cert_len = sizeof(ca_cert);
-    if (!validate_cert(ca_cert, cert_len))
+    // Pass the raw macro array size directly (includes '\0')
+    const uint8_t *ca_cert = (const uint8_t *)CA_ROOT_CERT;
+    size_t cert_len = sizeof(CA_ROOT_CERT);
+
+    if (!validate_cert(ca_cert, cert_len)) {
+        printf("Validation failed before TLS config creation.\n");
         return false;
+    }
     
     cyw43_arch_lwip_begin();
     config = altcp_tls_create_config_client(ca_cert, cert_len);
-    // if (config==NULL) {
-    //     printf("TLS config failed, continuing without certificate.\n");
-    //     config = altcp_tls_create_config_client(NULL, 0);
-    // }
+    if (config == NULL) {
+        printf("altcp_tls_create_config_client returned NULL (check lwIP heap and CA certificate)\n");
+        cyw43_arch_lwip_end();
+        return false;
+    }
     
     https_pcb = altcp_tls_new(config, IPADDR_TYPE_V4);
     cyw43_arch_lwip_end();
-    if(https_pcb == NULL){
+
+    if (https_pcb == NULL) {
+        printf("altcp_tls_new failed.\n");
         altcp_tls_free_config(config);
+        config = NULL;
         return false;
     }
 
     // Set SNI hostname
     cyw43_arch_lwip_begin();
-    //int mbedtls_err = mbedtls_ssl_set_hostname(&(((altcp_mbedtls_state_t*)((*pcb)->state))->ssl_context), HOSTNAME);
     int mbedtls_err = mbedtls_ssl_set_hostname(altcp_tls_context(https_pcb), HOSTNAME);
     cyw43_arch_lwip_end();
-    if(mbedtls_err){
+
+    if (mbedtls_err != 0) {
+        printf("SNI set hostname failed: %d\n", mbedtls_err);
         altcp_close(https_pcb);
         altcp_tls_free_config(config);
+        https_pcb = NULL;
+        config = NULL;
         return false;
     }
 
-    // Set callback functions
+    // Set callbacks & initiate connection
     cyw43_arch_lwip_begin();
     altcp_arg(https_pcb, NULL);
     altcp_err(https_pcb, callback_altcp_err);
     altcp_recv(https_pcb, callback_altcp_recv);
 
-    // Connect to host
-    printf("Attempting to connect to host.\n");
-
+    printf("Attempting to connect to host...\n");
     err_t err = altcp_connect(https_pcb, ipaddr, HTTPS_PORT, callback_altcp_connect);
     cyw43_arch_lwip_end();
-    if (err != ERR_OK)
-    {
+
+    if (err != ERR_OK) {
         printf("altcp_connect failed: %d\n", err);
         altcp_abort(https_pcb);
         altcp_tls_free_config(config);
         https_pcb = NULL;
-        request_complete = true;
-        request_success = false;
+        config = NULL;
         return false;
     }
+
+    // Wait for connection with proper poll handling
     while (!https_connection && !connection_failed) {
+#if CYW43_POLL
         cyw43_arch_poll();
+#endif
         sleep_ms(10);
     }
+
     if (!https_connection) {
-        printf("TLS connection failed.\n");
+        printf("TLS connection failed or timed out.\n");
         return false;
     }
+
     return true;
 }
 
@@ -146,14 +161,81 @@ bool validate_cert(const uint8_t *ca_cert, size_t cert_len) {
     }
 }
 
+static bool form_encode(char *dest, size_t dest_size, const char *src) {
+    static const char hex[] = "0123456789ABCDEF";
+    size_t out = 0;
+
+    if (dest_size == 0) {
+        return false;
+    }
+
+    for (const unsigned char *p = (const unsigned char *)src; *p != '\0'; ++p) {
+        unsigned char ch = *p;
+        bool unreserved = (ch >= 'A' && ch <= 'Z') ||
+                          (ch >= 'a' && ch <= 'z') ||
+                          (ch >= '0' && ch <= '9') ||
+                          ch == '-' || ch == '_' || ch == '.' || ch == '~';
+        size_t needed = unreserved || ch == ' ' ? 1u : 3u;
+
+        if (out + needed >= dest_size) {
+            return false;
+        }
+
+        if (unreserved) {
+            dest[out++] = (char)ch;
+        } else if (ch == ' ') {
+            dest[out++] = '+';
+        } else {
+            dest[out++] = '%';
+            dest[out++] = hex[ch >> 4];
+            dest[out++] = hex[ch & 0x0F];
+        }
+    }
+
+    dest[out] = '\0';
+    return true;
+}
+
 bool send_request() {
-    const char request[] = HTTPS_REQUEST;
+    char encoded_chat_id[128];
+    char encoded_message[384];
+    char body[512];
+    char request[768];
+
+    if (!form_encode(encoded_chat_id, sizeof(encoded_chat_id), CHATID) ||
+        !form_encode(encoded_message, sizeof(encoded_message), MESSAGE)) {
+        printf("Telegram request parameters are too long.\n");
+        return false;
+    }
+
+    int body_len = snprintf(body, sizeof(body), "chat_id=%s&text=%s",
+                            encoded_chat_id, encoded_message);
+    if (body_len < 0 || (size_t)body_len >= sizeof(body)) {
+        printf("Telegram request body is too long.\n");
+        return false;
+    }
+
+    int request_len = snprintf(
+        request, sizeof(request),
+        "POST /bot%s/sendMessage HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Content-Type: application/x-www-form-urlencoded\r\n"
+        "Content-Length: %d\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+        "%s",
+        TELEBOT_TOKEN, HOSTNAME, body_len, body);
+    if (request_len < 0 || (size_t)request_len >= sizeof(request)) {
+        printf("Telegram HTTP request is too long.\n");
+        return false;
+    }
+
     request_complete = false;
     request_success = false;
 
     //write request
     cyw43_arch_lwip_begin();
-    err_t err = altcp_write(https_pcb, request, strlen(request), TCP_WRITE_FLAG_COPY);
+    err_t err = altcp_write(https_pcb, request, (u16_t)request_len, TCP_WRITE_FLAG_COPY);
     cyw43_arch_lwip_end();
     if (err != ERR_OK) {
         printf("Write request failed: %d\n", err);
@@ -173,11 +255,13 @@ bool send_request() {
     }
     printf("HTTP request transmitted. Waiting for response...\n");
     while (!request_complete) {
+#if CYW43_POLL
         cyw43_arch_poll();
+#endif
         sleep_ms(10);
     }
     if (!request_success) {
-        printf("No response received\n");
+        printf("Telegram request failed; check the HTTP status and Bot API response above.\n");
         return false;
     }
     printf("HTTP response received successfully.\n");
@@ -243,9 +327,13 @@ err_t callback_altcp_recv(
         pbuf_copy_partial(buf, buffer, length, 0);
         buffer[length] = '\0';
         printf("Response:\n%s\n", buffer);
+
+        /* A received HTTP response is not necessarily a successful API call. */
+        request_success =
+            strncmp(buffer, "HTTP/1.1 2", 10) == 0 ||
+            strncmp(buffer, "HTTP/1.0 2", 10) == 0;
         
         altcp_recved(pcb, buf->tot_len);
-        request_success = true;
         request_complete = true;
     }
     pbuf_free(buf);

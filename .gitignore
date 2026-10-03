@@ -54,7 +54,7 @@ dkms.conf
 # debug information files
 *.dwo
 
-
+*.md
 
 # pyc files
 *.pyc
@@ -68,4 +68,10 @@ dkms.conf
 *joblib*
 .venv-pico-model*
 *.json
-*ipynb
+*ipynb*
+*.csv
+*.ps1
+*.cmake
+*.yaml
+*.ninja
+build/

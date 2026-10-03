@@ -1,5 +1,5 @@
-#define WIFI_SSID                         ""
-#define WIFI_PASSWORD                     ""
+#define WIFI_SSID                         "ASUS"
+#define WIFI_PASSWORD                     "Tfss78148$"
 #define HOSTNAME                          "api.telegram.org"
 #define HTTPS_PORT                        443
 #define CA_ROOT_CERT                                       \
@@ -25,18 +25,11 @@
 "2GTzLH4U/ALqn83/B2gX2yKQOC16jdFU8WnjXzPKej17CuPKf1855eJ1usV2GDPO\n" \
 "LPAvTK33sefOT6jEm0pUBsV/fdUID+Ic/n4XuKxe9tQWskMJDE32p2u0mYRlynqI\n" \
 "4uJEvlz36hz1\n" \
-"-----END CERTIFICATE-----\n"
+"-----END CERTIFICATE-----\n\0"
 
-#define TELEBOT_TOKEN           ""
-#define CHATID                  ""
+#define TELEBOT_TOKEN           "8818859723:AAE4ci1E0s54DjOBfu5jI99U_hn0as2BN48"
+#define CHATID                  "PassiveIEC61850MonitorNotifbot"
 #define MESSAGE                 "test"
-#define HTTPS_REQUEST                   \
-    "POST /bot" TELEBOT_TOKEN "/sendMessage HTTP/1.1\r\n"   \
-    "Host: " HOSTNAME "\r\n"    \
-    "Content-Type: application/x-www-form-urlencoded\r\n"   \
-    "Connection: close\r\n" \
-    "\r\n"  \
-    "chat_id=" CHATID "&text=" MESSAGE
 
 
 bool connect_to_wifi(void);
