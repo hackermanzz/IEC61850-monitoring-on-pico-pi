@@ -53,7 +53,6 @@ dkms.conf
 
 # debug information files
 *.dwo
-
 *.ps1
 # markdown files
 *.md
@@ -72,11 +71,17 @@ dkms.conf
 *.json
 *ipynb
 *.pcap
-!IEC61850_RF_training.ipynb
 
-rf_batch_models/
-rf_notebook_run*.log
-/rmii/build-sdcard-*/
 
 
 *.model
+*ipynb*
+*.csv
+*.ps1
+*.cmake
+*.yaml
+*.ninja
+build/
+*.pem
+gdroot-g2.crt.pem
+CMakeLists.txt
