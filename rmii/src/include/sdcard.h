@@ -17,7 +17,9 @@ typedef enum
 } sd_card_status_t;
 
 /* Pico W wiring uses SPI0 GP16/18/19; CS must be an external free GPIO. */
-/* RMII pins GP0-8/15 and Pico W internal pins GP23-25/29 are rejected. */
+/* RMII/LED pins GP0-8/13/15 and Pico W internal pins GP23-25/29 are rejected.
+ * All calls belong to one core; buffers must hold at least 512 bytes.
+ * Transactions block with bounded card-response deadlines. */
 typedef struct
 {
     spi_inst_t * spi;

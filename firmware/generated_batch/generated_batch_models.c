@@ -4,7 +4,16 @@
 #include <math.h>
 #include <stddef.h>
 
-enum { MODEL_NODE_LEAF = 0x01, MODEL_NODE_MISSING_RIGHT = 0x02 };
+enum
+{
+    MODEL_NODE_LEAF = 0x01,
+    MODEL_NODE_MISSING_RIGHT = 0x02,
+    MODEL_NODE_SIZE_BYTES = 12U,
+    GOOSE_TREE_COUNT = 100U,
+    GOOSE_NODE_COUNT = 2130U,
+    SV_TREE_COUNT = 100U,
+    SV_NODE_COUNT = 1944U
+};
 
 typedef struct
 {
@@ -17,7 +26,7 @@ typedef struct
 } generated_batch_model_node_t;
 
 typedef char generated_batch_model_node_size_check_t[
-    (sizeof(generated_batch_model_node_t) == 12U) ? 1 : -1];
+    (sizeof(generated_batch_model_node_t) == MODEL_NODE_SIZE_BYTES) ? 1 : -1];
 
 static float walk_tree(const generated_batch_model_node_t *nodes, uint16_t node_count,
                        uint16_t feature_count, uint16_t root,
@@ -29,7 +38,7 @@ static float walk_tree(const generated_batch_model_node_t *nodes, uint16_t node_
            (0U == (nodes[index].flags & MODEL_NODE_LEAF)))
     {
         const generated_batch_model_node_t *node = &nodes[index];
-        float input;
+        float input = 0.0f;
         if (feature_count <= node->feature)
         {
             return 0.0f;
@@ -4289,34 +4298,34 @@ const float g_pico_ml_batch_sv_relative_scale[PICO_ML_BATCH_SV_CHANNEL_COUNT] = 
 
 float pico_ml_batch_predict_goose(const float features[PICO_ML_BATCH_GOOSE_FEATURE_COUNT])
 {
-    uint16_t tree;
+    uint16_t tree = 0U;
     float sum = 0.0f;
     if (NULL == features)
     {
         return 0.0f;
     }
-    for (tree = 0U; tree < 100U; tree++)
+    for (tree = 0U; tree < GOOSE_TREE_COUNT; tree++)
     {
-        sum += walk_tree(g_goose_nodes, 2130U,
+        sum += walk_tree(g_goose_nodes, GOOSE_NODE_COUNT,
                          PICO_ML_BATCH_GOOSE_FEATURE_COUNT,
                          g_goose_roots[tree], features);
     }
-    return sum / 100.0f;
+    return sum / (float) GOOSE_TREE_COUNT;
 }
 
 float pico_ml_batch_predict_sv(const float features[PICO_ML_BATCH_SV_FEATURE_COUNT])
 {
-    uint16_t tree;
+    uint16_t tree = 0U;
     float sum = 0.0f;
     if (NULL == features)
     {
         return 0.0f;
     }
-    for (tree = 0U; tree < 100U; tree++)
+    for (tree = 0U; tree < SV_TREE_COUNT; tree++)
     {
-        sum += walk_tree(g_sv_nodes, 1944U,
+        sum += walk_tree(g_sv_nodes, SV_NODE_COUNT,
                          PICO_ML_BATCH_SV_FEATURE_COUNT,
                          g_sv_roots[tree], features);
     }
-    return sum / 100.0f;
+    return sum / (float) SV_TREE_COUNT;
 }

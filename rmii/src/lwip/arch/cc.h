@@ -32,7 +32,13 @@
 #ifndef PICO_RMII_LWIP_ARCH_CC_H
 #define PICO_RMII_LWIP_ARCH_CC_H
 
-#include <stdbool.h>
+#include "pico/rand.h"
+#include "pico/stdlib.h"
+
+/* Keep upstream DNS transaction-ID and source-port randomization enabled. */
+#ifndef LWIP_RAND
+#define LWIP_RAND() get_rand_32()
+#endif
 
 typedef int sys_prot_t;
 
@@ -69,17 +75,13 @@ typedef int sys_prot_t;
 #endif
 
 static inline void
-pico_rmii_lwip_assert (bool condition)
+pico_rmii_lwip_assert (const char * message)
 {
-    if (!condition)
-    {
-        for (;;)
-        {
-        }
-    }
+    /* lwIP passes an assertion message here, not a Boolean expression. */
+    panic("lwIP assertion: %s", message);
 }
 
 /* lwIP requires this public macro hook. Its body delegates to a function. */
-#define LWIP_PLATFORM_ASSERT(condition) pico_rmii_lwip_assert((condition))
+#define LWIP_PLATFORM_ASSERT(message) pico_rmii_lwip_assert((message))
 
 #endif /* PICO_RMII_LWIP_ARCH_CC_H */

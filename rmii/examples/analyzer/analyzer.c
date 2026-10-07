@@ -16,9 +16,8 @@
 #define GOOSE_ETHERTYPE (0x88b8u)
 #define SV_ETHERTYPE (0x88bau)
 #define MAXIMUM_ASDUS (14u)
-#define MAXIMUM_GOOSE_STREAMS (4u)
-#define MAXIMUM_SV_STREAMS (2u)
-#define MAXIMUM_STREAM_ID_LENGTH (64u)
+#define MAXIMUM_GOOSE_STREAMS (ANALYZER_MAXIMUM_GOOSE_STREAMS)
+#define MAXIMUM_STREAM_ID_LENGTH (ANALYZER_STREAM_ID_CAPACITY)
 #define MAC_ADDRESS_LENGTH (6u)
 #define GOOSE_FEATURE_COUNT (13u)
 #define SV_FEATURE_COUNT (18u)
@@ -121,21 +120,22 @@ enum sv_feature_index
     SV_FEATURE_SOURCE_CHANGED
 };
 
-typedef char
-    analyzer_batch_size_must_be_four_t[(PICO_ML_BATCH_SIZE_FRAMES ==
-                                        EXPECTED_BATCH_FRAME_COUNT)
-                                           ? 1
-                                                                         : -1];
+typedef char analyzer_batch_size_must_be_four_t
+    [(PICO_ML_BATCH_SIZE_FRAMES == EXPECTED_BATCH_FRAME_COUNT) ? 1 : -1];
 typedef char analyzer_batch_stride_must_be_two_t
     [(PICO_ML_BATCH_STRIDE_FRAMES == EXPECTED_BATCH_STRIDE) ? 1 : -1];
 typedef char analyzer_sv_channel_count_must_be_six_t
     [(PICO_ML_BATCH_SV_CHANNEL_COUNT == EXPECTED_SV_CHANNEL_COUNT) ? 1 : -1];
-typedef char analyzer_wave_history_must_be_128_t
-    [(PICO_ML_BATCH_WAVE_HISTORY_SAMPLES == EXPECTED_WAVE_HISTORY_SAMPLES) ? 1
-                                                                          : -1];
-typedef char analyzer_timing_history_must_be_32_t
-    [(PICO_ML_BATCH_TIMING_HISTORY_FRAMES == EXPECTED_TIMING_HISTORY_FRAMES) ? 1
-                                                                            : -1];
+typedef char
+    analyzer_wave_history_must_be_128_t[(PICO_ML_BATCH_WAVE_HISTORY_SAMPLES ==
+                                         EXPECTED_WAVE_HISTORY_SAMPLES)
+                                            ? 1
+                                            : -1];
+typedef char
+    analyzer_timing_history_must_be_32_t[(PICO_ML_BATCH_TIMING_HISTORY_FRAMES ==
+                                          EXPECTED_TIMING_HISTORY_FRAMES)
+                                             ? 1
+                                             : -1];
 
 typedef struct
 {
@@ -220,9 +220,12 @@ typedef struct
     uint8_t           source[MAC_ADDRESS_LENGTH];
     uint8_t           boolean_value;
     float             batch[PICO_ML_BATCH_SIZE_FRAMES][GOOSE_FEATURE_COUNT];
-    size_t            batch_count;
-    bool              has_prediction;
-    uint8_t           previous_label;
+    analyzer_packet_metadata_t batch_packets[ANALYZER_BATCH_FRAME_COUNT];
+    uint8_t                    batch_frames[ANALYZER_BATCH_FRAME_COUNT]
+                                           [ANALYZER_MAXIMUM_FRAME_LENGTH];
+    size_t                     batch_count;
+    bool                       has_prediction;
+    uint8_t                    previous_label;
 } goose_state_t;
 
 typedef struct
@@ -247,9 +250,12 @@ typedef struct
     size_t            wave_delta_count;
     size_t            wave_delta_next;
     float             batch[PICO_ML_BATCH_SIZE_FRAMES][SV_FEATURE_COUNT];
-    size_t            batch_count;
-    bool              has_prediction;
-    uint8_t           previous_label;
+    analyzer_packet_metadata_t batch_packets[ANALYZER_BATCH_FRAME_COUNT];
+    uint8_t                    batch_frames[ANALYZER_BATCH_FRAME_COUNT]
+                                           [ANALYZER_MAXIMUM_FRAME_LENGTH];
+    size_t                     batch_count;
+    bool                       has_prediction;
+    uint8_t                    previous_label;
 } sv_state_t;
 
 typedef struct
@@ -272,7 +278,7 @@ typedef struct
 } sv_batch_metrics_t;
 
 static goose_state_t g_goose_states[MAXIMUM_GOOSE_STREAMS];
-static sv_state_t    g_sv_states[MAXIMUM_SV_STREAMS];
+static sv_state_t    g_sv_states[ANALYZER_MAXIMUM_SV_STREAMS];
 static uint64_t      g_latest_goose_us;
 static uint64_t      g_latest_sv_us;
 static bool          g_have_latest_goose;
@@ -283,12 +289,56 @@ static uint32_t      g_malformed_frames;
 static bool          g_unsupported_parse;
 static float         g_median_scratch[PICO_ML_BATCH_WAVE_HISTORY_SAMPLES];
 static float         g_timing_scratch[PICO_ML_BATCH_TIMING_HISTORY_FRAMES];
-static float         g_sv_changes[MAXIMUM_ASDUS * PICO_ML_BATCH_SV_CHANNEL_COUNT];
-static float  g_sv_channel_values[PICO_ML_BATCH_SV_CHANNEL_COUNT][MAXIMUM_ASDUS];
-static float  g_sv_history_scratch[PICO_ML_BATCH_WAVE_HISTORY_SAMPLES];
-static float  g_last_batch_features[SV_BATCH_FEATURE_COUNT];
-static size_t g_last_batch_feature_count;
+static float g_sv_changes[MAXIMUM_ASDUS * PICO_ML_BATCH_SV_CHANNEL_COUNT];
+static float g_sv_channel_values[PICO_ML_BATCH_SV_CHANNEL_COUNT][MAXIMUM_ASDUS];
+static float g_sv_history_scratch[PICO_ML_BATCH_WAVE_HISTORY_SAMPLES];
+static float g_last_batch_features[SV_BATCH_FEATURE_COUNT];
+static size_t              g_last_batch_feature_count;
 static analyzer_protocol_t g_last_batch_protocol = ANALYZER_PROTOCOL_GOOSE;
+static analyzer_packet_metadata_t
+                       g_last_batch_packets[ANALYZER_BATCH_FRAME_COUNT];
+static uint8_t         g_last_batch_frames[PICO_ML_BATCH_STRIDE_FRAMES]
+                                          [ANALYZER_MAXIMUM_FRAME_LENGTH];
+static const uint8_t * gp_last_batch_tail_frames;
+static const uint8_t * gp_current_frame;
+static size_t          g_current_frame_length;
+static uint32_t        g_current_capture_sequence;
+static uint32_t        g_legacy_capture_sequence;
+
+static void
+record_batch_packet (analyzer_packet_metadata_t * packets, uint8_t * frames,
+                     size_t batch_index, const analyzer_result_t * result,
+                     const stream_identity_t * identity)
+{
+    analyzer_packet_metadata_t * metadata = NULL;
+
+    if (packets == NULL || frames == NULL ||
+        batch_index >= ANALYZER_BATCH_FRAME_COUNT || result == NULL ||
+        gp_current_frame == NULL ||
+        g_current_frame_length > ANALYZER_MAXIMUM_FRAME_LENGTH ||
+        identity == NULL)
+    {
+        return;
+    }
+    metadata = &packets[batch_index];
+    memset(metadata, 0, sizeof(*metadata));
+    metadata->timestamp_us     = result->timestamp_us;
+    metadata->capture_sequence = g_current_capture_sequence;
+    metadata->counter_1        = result->counter_1;
+    metadata->counter_2        = result->counter_2;
+    metadata->frame_length     = (uint16_t) g_current_frame_length;
+    metadata->appid            = result->appid;
+    metadata->protocol         = result->protocol;
+    metadata->stream_key       = result->stream_key;
+    metadata->stream_id_length = (uint8_t) identity->stream_id_length;
+    memcpy(metadata->stream_id, identity->stream_id,
+           identity->stream_id_length);
+    memcpy(metadata->source_mac, gp_current_frame + MAC_ADDRESS_LENGTH,
+           MAC_ADDRESS_LENGTH);
+    memcpy(metadata->destination_mac, gp_current_frame, MAC_ADDRESS_LENGTH);
+    memcpy(frames + batch_index * ANALYZER_MAXIMUM_FRAME_LENGTH,
+           gp_current_frame, g_current_frame_length);
+}
 
 static float
 maximum_float (float left, float right)
@@ -312,9 +362,9 @@ read_be16 (const uint8_t * value)
 static bool
 read_ber_uint (const uint8_t * value, size_t length, uint32_t * output)
 {
-    size_t   index = 0u;
+    size_t   index               = 0u;
     bool     has_sign_protection = false;
-    uint32_t parsed = 0u;
+    uint32_t parsed              = 0u;
 
     if (value == NULL || output == NULL || length == 0u ||
         length > BER_UNSIGNED_INTEGER_MAX_OCTETS)
@@ -337,7 +387,7 @@ read_ber_uint (const uint8_t * value, size_t length, uint32_t * output)
     }
     for (index = 0u; index < length; ++index)
     {
-            parsed = (parsed << BITS_PER_BYTE) | value[index];
+        parsed = (parsed << BITS_PER_BYTE) | value[index];
     }
     *output = parsed;
     return true;
@@ -357,8 +407,8 @@ read_ber_boolean (const uint8_t * value, size_t length, bool * output)
 static bool
 read_tlv (const uint8_t * cursor, const uint8_t * end, analyzer_tlv_t * output)
 {
-    size_t  available = 0u;
-    size_t  length = 0u;
+    size_t  available    = 0u;
+    size_t  length       = 0u;
     uint8_t first_length = 0u;
 
     if (cursor == NULL || end == NULL || output == NULL || end < cursor)
@@ -379,7 +429,7 @@ read_tlv (const uint8_t * cursor, const uint8_t * end, analyzer_tlv_t * output)
     else
     {
         const size_t octets = (size_t) (first_length & BER_LENGTH_OCTET_MASK);
-        size_t       index = 0u;
+        size_t       index  = 0u;
 
         if (octets == 0u || octets > BER_MAX_LENGTH_OCTETS ||
             (size_t) (end - cursor) < octets)
@@ -410,22 +460,23 @@ static bool
 find_ethernet_payload (const uint8_t * frame, size_t length,
                        ethernet_payload_t * output)
 {
-    uint16_t type = 0u;
+    uint16_t type           = 0u;
     size_t   payload_offset = ETHERNET_HEADER_SIZE;
-    size_t   tag_count = 0u;
+    size_t   tag_count      = 0u;
 
     if (frame == NULL || output == NULL || length < ETHERNET_HEADER_SIZE)
     {
         return false;
     }
     type = read_be16(frame + ETHERNET_TYPE_FIELD_OFFSET);
-    for (tag_count = 0u; tag_count < MAXIMUM_VLAN_TAGS &&
-                          (type == ETHERNET_VLAN_8021Q_TYPE ||
-                           type == ETHERNET_VLAN_8021AD_TYPE ||
-                           type == ETHERNET_VLAN_QINQ_TYPE);
+    for (tag_count = 0u;
+         tag_count < MAXIMUM_VLAN_TAGS &&
+         (type == ETHERNET_VLAN_8021Q_TYPE ||
+          type == ETHERNET_VLAN_8021AD_TYPE || type == ETHERNET_VLAN_QINQ_TYPE);
          ++tag_count)
     {
-        if (payload_offset > length || length - payload_offset < VLAN_TAG_HEADER_SIZE)
+        if (payload_offset > length ||
+            length - payload_offset < VLAN_TAG_HEADER_SIZE)
         {
             return false;
         }
@@ -522,14 +573,14 @@ static bool
 parse_goose (const ethernet_payload_t * payload, goose_fields_t * output)
 {
     uint16_t        apdu_length = 0u;
-    const uint8_t * end = NULL;
+    const uint8_t * end         = NULL;
     analyzer_tlv_t  pdu;
     goose_fields_t  fields      = {0};
     bool            have_ref    = false;
     bool            have_st_num = false;
     bool            have_sq_num = false;
-    const uint8_t * cursor = NULL;
-    const uint8_t * pdu_end = NULL;
+    const uint8_t * cursor      = NULL;
+    const uint8_t * pdu_end     = NULL;
 
     if (payload == NULL || output == NULL ||
         payload->length < IEC61850_APDU_MINIMUM_LENGTH)
@@ -576,10 +627,10 @@ parse_goose (const ethernet_payload_t * payload, goose_fields_t * output)
 static bool
 parse_sv_asdu (const analyzer_tlv_t * raw, sv_asdu_t * asdu)
 {
-    bool            have_id = false;
+    bool            have_id          = false;
     bool            have_count_field = false;
-    const uint8_t * field_cursor = raw->value;
-    const uint8_t * raw_end = raw->value + raw->length;
+    const uint8_t * field_cursor     = raw->value;
+    const uint8_t * raw_end          = raw->value + raw->length;
 
     if (raw->tag != BER_SEQUENCE_TAG)
     {
@@ -634,14 +685,14 @@ static bool
 parse_sv (const ethernet_payload_t * payload, sv_fields_t * output)
 {
     uint16_t        apdu_length = 0u;
-    const uint8_t * end = NULL;
+    const uint8_t * end         = NULL;
     analyzer_tlv_t  apdu;
     sv_fields_t     fields          = {0};
     bool            have_count      = false;
     const uint8_t * sequence        = NULL;
     size_t          sequence_length = 0u;
-    const uint8_t * cursor = NULL;
-    const uint8_t * apdu_end = NULL;
+    const uint8_t * cursor          = NULL;
+    const uint8_t * apdu_end        = NULL;
 
     g_unsupported_parse = false;
     if (payload == NULL || output == NULL ||
@@ -687,8 +738,7 @@ parse_sv (const ethernet_payload_t * payload, sv_fields_t * output)
         cursor = field.next;
     }
     if (!have_count || fields.no_asdu == 0u ||
-        fields.no_asdu > MAXIMUM_ENCODED_ASDU_COUNT ||
-        sequence == NULL)
+        fields.no_asdu > MAXIMUM_ENCODED_ASDU_COUNT || sequence == NULL)
     {
         return false;
     }
@@ -701,7 +751,7 @@ parse_sv (const ethernet_payload_t * payload, sv_fields_t * output)
     cursor = sequence;
     while (cursor < sequence + sequence_length)
     {
-        analyzer_tlv_t  raw;
+        analyzer_tlv_t raw;
         if (!read_tlv(cursor, sequence + sequence_length, &raw) ||
             raw.tag != BER_SEQUENCE_TAG || fields.asdu_count >= MAXIMUM_ASDUS)
         {
@@ -726,7 +776,7 @@ static uint32_t
 batch_hash (uint16_t appid, const uint8_t * stream_id, size_t stream_id_length,
             const uint8_t * destination)
 {
-    uint32_t hash = UINT32_C(2166136261);
+    uint32_t hash  = UINT32_C(2166136261);
     size_t   index = 0u;
 
     for (index = 0u; index < MAC_ADDRESS_LENGTH; ++index)
@@ -761,7 +811,7 @@ goose_state_for (uint16_t appid, const uint8_t * stream_id,
                  uint32_t key)
 {
     goose_state_t * free_state = NULL;
-    size_t          index = 0u;
+    size_t          index      = 0u;
 
     if (stream_id == NULL)
     {
@@ -810,7 +860,7 @@ sv_state_for (uint16_t appid, const uint8_t * stream_id,
               uint32_t key)
 {
     sv_state_t * free_state = NULL;
-    size_t       index = 0u;
+    size_t       index      = 0u;
 
     if (stream_id == NULL)
     {
@@ -821,7 +871,7 @@ sv_state_for (uint16_t appid, const uint8_t * stream_id,
         ++g_unsupported_streams;
         return NULL;
     }
-    for (index = 0u; index < MAXIMUM_SV_STREAMS; ++index)
+    for (index = 0u; index < ANALYZER_MAXIMUM_SV_STREAMS; ++index)
     {
         sv_state_t * state = &g_sv_states[index];
         if (state->used && identity_matches(&state->identity, appid, stream_id,
@@ -861,8 +911,8 @@ select_median_upper (size_t count, size_t target)
 
     while (left < right)
     {
-        const float pivot =
-            g_median_scratch[left + ((right - left) / INTEGER_MIDPOINT_DIVISOR)];
+        const float pivot = g_median_scratch[left + ((right - left) /
+                                                     INTEGER_MIDPOINT_DIVISOR)];
         size_t      lower = left;
         size_t      upper = right;
 
@@ -882,7 +932,7 @@ select_median_upper (size_t count, size_t target)
             }
             if (lower <= upper)
             {
-                const float temporary = g_median_scratch[lower];
+                const float temporary   = g_median_scratch[lower];
                 g_median_scratch[lower] = g_median_scratch[upper];
                 g_median_scratch[upper] = temporary;
                 ++lower;
@@ -974,19 +1024,41 @@ push_time (float * values, size_t capacity, size_t * count, size_t * next,
 }
 
 static void
+save_completed_batch_snapshot (analyzer_packet_metadata_t * packets,
+                               uint8_t * raw_frames, analyzer_result_t * result)
+{
+    size_t index = 0u;
+
+    result->batch_frame_count = ANALYZER_BATCH_FRAME_COUNT;
+    gp_last_batch_tail_frames = raw_frames;
+    for (index = 0u; index < ANALYZER_BATCH_FRAME_COUNT; ++index)
+    {
+        result->batch_packets[index] = packets[index];
+        g_last_batch_packets[index]  = packets[index];
+        if (index < PICO_ML_BATCH_STRIDE_FRAMES)
+        {
+            memcpy(g_last_batch_frames[index],
+                   raw_frames + index * ANALYZER_MAXIMUM_FRAME_LENGTH,
+                   packets[index].frame_length);
+        }
+    }
+}
+
+static void
 predict_batch (float * batch, size_t feature_count, size_t * batch_count,
                const float * frame, analyzer_result_t * result,
                uint8_t * previous_label, bool * has_prediction, float threshold,
-               float (*predict)(const float *), size_t output_count)
+               float (*predict)(const float *), size_t output_count,
+               analyzer_packet_metadata_t * packets, uint8_t * raw_frames)
 {
     float  output[SV_BATCH_FEATURE_COUNT];
-    size_t feature = 0u;
+    size_t feature     = 0u;
     size_t frame_index = 0u;
 
     if (batch == NULL || batch_count == NULL || frame == NULL ||
         result == NULL || previous_label == NULL || has_prediction == NULL ||
-        predict == NULL || feature_count == 0u ||
-        feature_count > SV_FEATURE_COUNT ||
+        predict == NULL || feature_count == 0u || packets == NULL ||
+        raw_frames == NULL || feature_count > SV_FEATURE_COUNT ||
         *batch_count >= PICO_ML_BATCH_SIZE_FRAMES)
     {
         return;
@@ -1011,7 +1083,7 @@ predict_batch (float * batch, size_t feature_count, size_t * batch_count,
         float        sum               = 0.0f;
         float        maximum           = batch[feature];
         float        squared_delta_sum = 0.0f;
-        const size_t mean_index = feature * BATCH_FEATURES_PER_METRIC;
+        const size_t mean_index        = feature * BATCH_FEATURES_PER_METRIC;
 
         for (frame_index = 0u; frame_index < PICO_ML_BATCH_SIZE_FRAMES;
              ++frame_index)
@@ -1039,14 +1111,15 @@ predict_batch (float * batch, size_t feature_count, size_t * batch_count,
         const float   probability = predict(output);
         const uint8_t label       = probability >= threshold ? 1u : 0u;
         memcpy(g_last_batch_features, output, output_count * sizeof(float));
-        g_last_batch_feature_count    = output_count;
-        g_last_batch_protocol         = result->protocol;
+        g_last_batch_feature_count  = output_count;
+        g_last_batch_protocol       = result->protocol;
         result->prediction_ready    = true;
         result->primary_probability = probability;
         result->primary_label       = label;
         result->label_changed = !*has_prediction || label != *previous_label;
-        *has_prediction       = true;
-        *previous_label       = label;
+        save_completed_batch_snapshot(packets, raw_frames, result);
+        *has_prediction = true;
+        *previous_label = label;
     }
     *batch_count -= PICO_ML_BATCH_STRIDE_FRAMES;
     for (frame_index = 0u; frame_index < *batch_count; ++frame_index)
@@ -1056,6 +1129,16 @@ predict_batch (float * batch, size_t feature_count, size_t * batch_count,
                     (frame_index + PICO_ML_BATCH_STRIDE_FRAMES) * feature_count,
                 feature_count * sizeof(float));
     }
+    for (frame_index = 0u; frame_index < *batch_count; ++frame_index)
+    {
+        memmove(packets + frame_index,
+                packets + frame_index + PICO_ML_BATCH_STRIDE_FRAMES,
+                sizeof(*packets));
+        memmove(raw_frames + frame_index * ANALYZER_MAXIMUM_FRAME_LENGTH,
+                raw_frames + (frame_index + PICO_ML_BATCH_STRIDE_FRAMES) *
+                                 ANALYZER_MAXIMUM_FRAME_LENGTH,
+                ANALYZER_MAXIMUM_FRAME_LENGTH);
+    }
 }
 
 static void
@@ -1063,7 +1146,7 @@ printable (char * output, size_t capacity, const uint8_t * input,
            size_t input_length)
 {
     size_t copy_length = 0u;
-    size_t index = 0u;
+    size_t index       = 0u;
 
     if (output == NULL || capacity == 0u)
     {
@@ -1180,8 +1263,8 @@ read_goose_boolean (const goose_fields_t * fields, bool * value)
     analyzer_tlv_t data_field;
 
     if (fields->all_data == NULL || fields->all_data_length == 0u ||
-        !read_tlv(fields->all_data,
-                  fields->all_data + fields->all_data_length, &data_field) ||
+        !read_tlv(fields->all_data, fields->all_data + fields->all_data_length,
+                  &data_field) ||
         data_field.tag != GOOSE_BOOLEAN_DATA_TAG || data_field.length == 0u)
     {
         return false;
@@ -1191,36 +1274,31 @@ read_goose_boolean (const goose_fields_t * fields, bool * value)
 }
 
 static void
-calculate_goose_features (goose_state_t * state,
-                          const goose_fields_t * fields,
+calculate_goose_features (goose_state_t * state, const goose_fields_t * fields,
                           const uint8_t * source, uint64_t timestamp_us,
-                          float features[GOOSE_FEATURE_COUNT],
+                          float   features[GOOSE_FEATURE_COUNT],
                           float * delta_seconds_out, bool * boolean_valid_out,
                           bool * boolean_value_out)
 {
-    const bool boolean_valid = read_goose_boolean(fields, boolean_value_out);
+    const bool  boolean_valid = read_goose_boolean(fields, boolean_value_out);
     const float delta_seconds =
-        state->has_time
-            ? (float) (timestamp_us - state->timestamp_us) *
-                  SECONDS_PER_MICROSECOND
-            : 0.0f;
-    const float prior_interval =
-        ring_median(state->previous_intervals,
-                    PICO_ML_BATCH_TIMING_HISTORY_FRAMES, state->interval_count,
-                    state->interval_next);
-    const float ratio = prior_interval > 0.0f ? delta_seconds / prior_interval
-                                               : 1.0f;
+        state->has_time ? (float) (timestamp_us - state->timestamp_us) *
+                              SECONDS_PER_MICROSECOND
+                        : 0.0f;
+    const float prior_interval = ring_median(
+        state->previous_intervals, PICO_ML_BATCH_TIMING_HISTORY_FRAMES,
+        state->interval_count, state->interval_next);
+    const float ratio =
+        prior_interval > 0.0f ? delta_seconds / prior_interval : 1.0f;
     const bool source_changed =
-        state->has_source && memcmp(state->source, source, MAC_ADDRESS_LENGTH) != 0;
-    const int64_t st_delta = state->has_st
-                                 ? (int64_t) fields->st_num -
-                                       (int64_t) state->st_num
-                                 : 0;
-    const int64_t sequence_delta = state->has_sq &&
-                                           fields->st_num == state->st_num
-                                       ? (int64_t) fields->sq_num -
-                                             (int64_t) state->sq_num
-                                       : 0;
+        state->has_source &&
+        memcmp(state->source, source, MAC_ADDRESS_LENGTH) != 0;
+    const int64_t st_delta =
+        state->has_st ? (int64_t) fields->st_num - (int64_t) state->st_num : 0;
+    const int64_t sequence_delta =
+        state->has_sq && fields->st_num == state->st_num
+            ? (int64_t) fields->sq_num - (int64_t) state->sq_num
+            : 0;
     float age_seconds = PICO_ML_BATCH_TIMING_MISSING_AGE_SECONDS;
 
     if (g_have_latest_sv && timestamp_us >= g_latest_sv_us)
@@ -1232,9 +1310,9 @@ calculate_goose_features (goose_state_t * state,
     {
         age_seconds = 0.0f;
     }
-    features[GOOSE_FEATURE_INTERVAL_SECONDS] = delta_seconds;
-    features[GOOSE_FEATURE_INTERVAL_RATIO] = ratio;
-    features[GOOSE_FEATURE_ST_NUMBER_DELTA] = fabsf((float) st_delta);
+    features[GOOSE_FEATURE_INTERVAL_SECONDS]   = delta_seconds;
+    features[GOOSE_FEATURE_INTERVAL_RATIO]     = ratio;
+    features[GOOSE_FEATURE_ST_NUMBER_DELTA]    = fabsf((float) st_delta);
     features[GOOSE_FEATURE_ST_NUMBER_ROLLBACK] = st_delta < 0 ? 1.0f : 0.0f;
     features[GOOSE_FEATURE_ST_NUMBER_JUMP] =
         st_delta > PICO_ML_BATCH_COUNTER_MAX_STNUM_STEP ? 1.0f : 0.0f;
@@ -1253,15 +1331,14 @@ calculate_goose_features (goose_state_t * state,
                 state->boolean_value != (uint8_t) *boolean_value_out
             ? 1.0f
             : 0.0f;
-    *delta_seconds_out  = delta_seconds;
-    *boolean_valid_out  = boolean_valid;
+    *delta_seconds_out = delta_seconds;
+    *boolean_valid_out = boolean_valid;
 }
 
 static void
 update_goose_state (goose_state_t * state, const goose_fields_t * fields,
                     const uint8_t * source, uint64_t timestamp_us,
-                    float delta_seconds, bool boolean_valid,
-                    bool boolean_value)
+                    float delta_seconds, bool boolean_valid, bool boolean_value)
 {
     if (state->has_time && delta_seconds > 0.0f)
     {
@@ -1296,11 +1373,11 @@ process_goose_batch (const uint8_t * source, const uint8_t * destination,
     goose_state_t * state =
         goose_state_for(fields->appid, fields->gocb_ref,
                         fields->gocb_ref_length, destination, key);
-    float   features[GOOSE_FEATURE_COUNT];
-    float   delta_seconds = 0.0f;
-    bool    boolean_valid = false;
-    bool    boolean_value = false;
-    size_t  feature_index = 0u;
+    float  features[GOOSE_FEATURE_COUNT];
+    float  delta_seconds = 0.0f;
+    bool   boolean_valid = false;
+    bool   boolean_value = false;
+    size_t feature_index = 0u;
 
     if (state == NULL)
     {
@@ -1317,15 +1394,19 @@ process_goose_batch (const uint8_t * source, const uint8_t * destination,
         return false;
     }
     populate_goose_result(fields, key, result);
+    result->timestamp_us = timestamp_us;
     calculate_goose_features(state, fields, source, timestamp_us, features,
                              &delta_seconds, &boolean_valid, &boolean_value);
     update_goose_state(state, fields, source, timestamp_us, delta_seconds,
                        boolean_valid, boolean_value);
 
+    record_batch_packet(state->batch_packets, &state->batch_frames[0][0],
+                        state->batch_count, result, &state->identity);
     predict_batch(&state->batch[0][0], GOOSE_FEATURE_COUNT, &state->batch_count,
                   features, result, &state->previous_label,
                   &state->has_prediction, PICO_ML_BATCH_GOOSE_THRESHOLD,
-                  goose_predict, GOOSE_BATCH_FEATURE_COUNT);
+                  goose_predict, GOOSE_BATCH_FEATURE_COUNT,
+                  state->batch_packets, &state->batch_frames[0][0]);
     result->feature_count = ANALYZER_FEATURE_CAPACITY;
     for (feature_index = 0u; feature_index < ANALYZER_FEATURE_CAPACITY;
          ++feature_index)
@@ -1338,9 +1419,9 @@ process_goose_batch (const uint8_t * source, const uint8_t * destination,
 static bool
 validate_sv_payload (const sv_fields_t * fields, size_t * required_length)
 {
-    size_t channel = 0u;
+    size_t channel        = 0u;
     size_t maximum_length = 0u;
-    size_t asdu_index = 0u;
+    size_t asdu_index     = 0u;
 
     if (fields == NULL || required_length == NULL || fields->asdu_count == 0u ||
         fields->asdu_count > MAXIMUM_ASDUS)
@@ -1382,7 +1463,7 @@ collect_sv_samples (sv_state_t * state, const sv_fields_t * fields,
                     sv_batch_metrics_t * metrics)
 {
     size_t asdu_index = 0u;
-    size_t channel = 0u;
+    size_t channel    = 0u;
 
     memset(g_sv_changes, 0, sizeof(g_sv_changes));
     memset(g_sv_channel_values, 0, sizeof(g_sv_channel_values));
@@ -1399,20 +1480,19 @@ collect_sv_samples (sv_state_t * state, const sv_fields_t * fields,
                 counter_delta -= INT64_C(4294967296);
             }
             const float absolute_delta = fabsf((float) counter_delta);
-            metrics->delta_max = maximum_float(metrics->delta_max, absolute_delta);
+            metrics->delta_max =
+                maximum_float(metrics->delta_max, absolute_delta);
             metrics->back += counter_delta < 0 ? 1u : 0u;
             metrics->repeat += counter_delta == 0 ? 1u : 0u;
-            metrics->gap += absolute_delta >
-                                    PICO_ML_BATCH_COUNTER_MAX_SMP_DELTA
-                                ? 1u
-                                : 0u;
+            metrics->gap +=
+                absolute_delta > PICO_ML_BATCH_COUNTER_MAX_SMP_DELTA ? 1u : 0u;
         }
         state->counters[asdu_index]    = asdu->smp_cnt;
         state->has_counter[asdu_index] = true;
         for (channel = 0u; channel < PICO_ML_BATCH_SV_CHANNEL_COUNT; ++channel)
         {
             const size_t offset = g_pico_ml_batch_sv_channel_offsets[channel];
-            const float current =
+            const float  current =
                 float_from_bits(read_be32_float_bits(asdu->seq_data + offset));
             const uint16_t history_count =
                 state->wave_count[asdu_index][channel];
@@ -1420,9 +1500,9 @@ collect_sv_samples (sv_state_t * state, const sv_fields_t * fields,
             g_sv_channel_values[channel][asdu_index] = current;
             if (history_count != 0u)
             {
-                size_t history_index = 0u;
-                float baseline = 0.0f;
-                float relative_change = 0.0f;
+                size_t history_index   = 0u;
+                float  baseline        = 0.0f;
+                float  relative_change = 0.0f;
                 for (history_index = 0u; history_index < history_count;
                      ++history_index)
                 {
@@ -1436,8 +1516,9 @@ collect_sv_samples (sv_state_t * state, const sv_fields_t * fields,
                 relative_change =
                     fabsf(current - baseline) /
                     maximum_float(
-                        maximum_float(fabsf(baseline),
-                                      g_pico_ml_batch_sv_relative_scale[channel]),
+                        maximum_float(
+                            fabsf(baseline),
+                            g_pico_ml_batch_sv_relative_scale[channel]),
                         PICO_ML_BATCH_WAVE_EPSILON);
                 g_sv_changes[metrics->change_count++] = relative_change;
                 metrics->jumps +=
@@ -1472,14 +1553,16 @@ summarize_sv_history (sv_state_t * state, sv_batch_metrics_t * metrics)
                                 state->wave_delta_count + history_index) %
                                PICO_ML_BATCH_WAVE_HISTORY_SAMPLES];
     }
-    metrics->robust = batch_median(g_sv_history_scratch, state->wave_delta_count);
+    metrics->robust =
+        batch_median(g_sv_history_scratch, state->wave_delta_count);
     for (history_index = 0u; history_index < metrics->change_count;
          ++history_index)
     {
         metrics->change_sum += g_sv_changes[history_index];
         metrics->change_max =
             maximum_float(metrics->change_max, g_sv_changes[history_index]);
-        state->wave_deltas[state->wave_delta_next] = g_sv_changes[history_index];
+        state->wave_deltas[state->wave_delta_next] =
+            g_sv_changes[history_index];
         state->wave_delta_next =
             (state->wave_delta_next + 1u) % PICO_ML_BATCH_WAVE_HISTORY_SAMPLES;
         if (state->wave_delta_count < PICO_ML_BATCH_WAVE_HISTORY_SAMPLES)
@@ -1492,18 +1575,19 @@ summarize_sv_history (sv_state_t * state, sv_batch_metrics_t * metrics)
 static void
 calculate_sv_channel_ranges (size_t asdu_count, sv_batch_metrics_t * metrics)
 {
-    size_t channel = 0u;
+    size_t channel    = 0u;
     size_t asdu_index = 0u;
 
     for (channel = 0u; channel < PICO_ML_BATCH_SV_CHANNEL_COUNT; ++channel)
     {
         float channel_values[MAXIMUM_ASDUS];
         float center = 0.0f;
-        float low = 0.0f;
-        float high = 0.0f;
+        float low    = 0.0f;
+        float high   = 0.0f;
         for (asdu_index = 0u; asdu_index < asdu_count; ++asdu_index)
         {
-            channel_values[asdu_index] = g_sv_channel_values[channel][asdu_index];
+            channel_values[asdu_index] =
+                g_sv_channel_values[channel][asdu_index];
         }
         center = fabsf(batch_median(channel_values, asdu_count));
         low    = channel_values[0];
@@ -1516,11 +1600,12 @@ calculate_sv_channel_ranges (size_t asdu_count, sv_batch_metrics_t * metrics)
         metrics->ranges[channel] =
             (high - low) /
             maximum_float(
-                maximum_float(center, g_pico_ml_batch_sv_relative_scale[channel]),
+                maximum_float(center,
+                              g_pico_ml_batch_sv_relative_scale[channel]),
                 PICO_ML_BATCH_WAVE_EPSILON);
         metrics->range_sum += metrics->ranges[channel];
-        metrics->range_max = maximum_float(metrics->range_max,
-                                           metrics->ranges[channel]);
+        metrics->range_max =
+            maximum_float(metrics->range_max, metrics->ranges[channel]);
     }
 }
 
@@ -1529,26 +1614,26 @@ calculate_sv_features (const sv_state_t * state, const sv_fields_t * fields,
                        const uint8_t * source, uint64_t timestamp_us,
                        float delta_seconds, float ratio,
                        const sv_batch_metrics_t * metrics,
-                       float features[SV_FEATURE_COUNT])
+                       float                      features[SV_FEATURE_COUNT])
 {
     float age_seconds = PICO_ML_BATCH_TIMING_MISSING_AGE_SECONDS;
 
     if (g_have_latest_goose && timestamp_us >= g_latest_goose_us)
     {
-        age_seconds =
-            (float) (timestamp_us - g_latest_goose_us) * SECONDS_PER_MICROSECOND;
+        age_seconds = (float) (timestamp_us - g_latest_goose_us) *
+                      SECONDS_PER_MICROSECOND;
     }
     else if (g_have_latest_goose)
     {
         age_seconds = 0.0f;
     }
-    features[SV_FEATURE_INTERVAL_SECONDS] = delta_seconds;
-    features[SV_FEATURE_INTERVAL_RATIO] = ratio;
-    features[SV_FEATURE_GOOSE_AGE_SECONDS] = age_seconds;
-    features[SV_FEATURE_ASDU_COUNT] = (float) fields->no_asdu;
-    features[SV_FEATURE_COUNTER_BACK] = (float) metrics->back;
-    features[SV_FEATURE_COUNTER_REPEAT] = (float) metrics->repeat;
-    features[SV_FEATURE_COUNTER_GAP] = (float) metrics->gap;
+    features[SV_FEATURE_INTERVAL_SECONDS]      = delta_seconds;
+    features[SV_FEATURE_INTERVAL_RATIO]        = ratio;
+    features[SV_FEATURE_GOOSE_AGE_SECONDS]     = age_seconds;
+    features[SV_FEATURE_ASDU_COUNT]            = (float) fields->no_asdu;
+    features[SV_FEATURE_COUNTER_BACK]          = (float) metrics->back;
+    features[SV_FEATURE_COUNTER_REPEAT]        = (float) metrics->repeat;
+    features[SV_FEATURE_COUNTER_GAP]           = (float) metrics->gap;
     features[SV_FEATURE_COUNTER_DELTA_MAXIMUM] = metrics->delta_max;
     features[SV_FEATURE_WAVE_RELATIVE_CHANGE_MEAN] =
         metrics->change_count != 0u
@@ -1575,7 +1660,8 @@ calculate_sv_features (const sv_state_t * state, const sv_fields_t * fields,
         metrics->range_sum / (float) PICO_ML_BATCH_SV_CHANNEL_COUNT;
     features[SV_FEATURE_CHANNEL_RANGE_MAXIMUM] = metrics->range_max;
     features[SV_FEATURE_SOURCE_CHANGED] =
-        state->has_source && memcmp(state->source, source, MAC_ADDRESS_LENGTH) != 0
+        state->has_source &&
+                memcmp(state->source, source, MAC_ADDRESS_LENGTH) != 0
             ? 1.0f
             : 0.0f;
 }
@@ -1603,16 +1689,16 @@ process_sv_batch (const uint8_t * source, const uint8_t * destination,
                   const sv_fields_t * fields, uint64_t timestamp_us,
                   analyzer_result_t * result)
 {
-    const sv_asdu_t * first_asdu = NULL;
-    uint32_t          key = 0u;
-    sv_state_t *      state = NULL;
-    size_t            required_length = 0u;
-    size_t            channel = 0u;
-    sv_batch_metrics_t metrics = {0};
-    float             features[SV_FEATURE_COUNT];
-    float             delta_seconds = 0.0f;
-    float             prior_interval = 0.0f;
-    float             ratio = 0.0f;
+    const sv_asdu_t *  first_asdu      = NULL;
+    uint32_t           key             = 0u;
+    sv_state_t *       state           = NULL;
+    size_t             required_length = 0u;
+    size_t             channel         = 0u;
+    sv_batch_metrics_t metrics         = {0};
+    float              features[SV_FEATURE_COUNT];
+    float              delta_seconds  = 0.0f;
+    float              prior_interval = 0.0f;
+    float              ratio          = 0.0f;
 
     if (source == NULL || destination == NULL || fields == NULL ||
         result == NULL || fields->asdu_count == 0u ||
@@ -1643,14 +1729,15 @@ process_sv_batch (const uint8_t * source, const uint8_t * destination,
         return false;
     }
     memset(result, 0, sizeof(*result));
-    result->protocol   = ANALYZER_PROTOCOL_SAMPLED_VALUES;
-    result->appid      = fields->appid;
-    result->stream_key = key;
-    result->counter_1  = first_asdu->smp_cnt;
-    delta_seconds      = state->has_time
-                             ? (float) (timestamp_us - state->timestamp_us) *
-                                   SECONDS_PER_MICROSECOND
-                             : 0.0f;
+    result->protocol     = ANALYZER_PROTOCOL_SAMPLED_VALUES;
+    result->appid        = fields->appid;
+    result->timestamp_us = timestamp_us;
+    result->stream_key   = key;
+    result->counter_1    = first_asdu->smp_cnt;
+    delta_seconds        = state->has_time
+                               ? (float) (timestamp_us - state->timestamp_us) *
+                                     SECONDS_PER_MICROSECOND
+                               : 0.0f;
     prior_interval = ring_median(state->previous_intervals,
                                  PICO_ML_BATCH_TIMING_HISTORY_FRAMES,
                                  state->interval_count, state->interval_next);
@@ -1661,10 +1748,13 @@ process_sv_batch (const uint8_t * source, const uint8_t * destination,
     calculate_sv_features(state, fields, source, timestamp_us, delta_seconds,
                           ratio, &metrics, features);
     update_sv_state(state, source, timestamp_us, delta_seconds);
+    record_batch_packet(state->batch_packets, &state->batch_frames[0][0],
+                        state->batch_count, result, &state->identity);
     predict_batch(&state->batch[0][0], SV_FEATURE_COUNT, &state->batch_count,
                   features, result, &state->previous_label,
                   &state->has_prediction, PICO_ML_BATCH_SV_THRESHOLD,
-                  sv_predict, SV_BATCH_FEATURE_COUNT);
+                  sv_predict, SV_BATCH_FEATURE_COUNT, state->batch_packets,
+                  &state->batch_frames[0][0]);
     result->feature_count = ANALYZER_FEATURE_CAPACITY;
     for (channel = 0u; channel < ANALYZER_FEATURE_CAPACITY; ++channel)
     {
@@ -1683,6 +1773,7 @@ analyzer_reset (void)
     g_have_latest_goose        = false;
     g_have_latest_sv           = false;
     g_last_batch_feature_count = 0u;
+    gp_last_batch_tail_frames  = NULL;
     g_unsupported_parse        = false;
 }
 
@@ -1721,12 +1812,51 @@ analyzer_copy_last_batch_features (float * output, size_t capacity,
 }
 
 bool
-analyzer_process_ethernet_frame (const uint8_t * frame, size_t length,
-                                 uint64_t            timestamp_us,
-                                 analyzer_result_t * result)
+analyzer_copy_last_batch_frame (size_t index, uint8_t * output, size_t capacity,
+                                analyzer_packet_metadata_t * metadata)
+{
+    size_t          length = 0u;
+    const uint8_t * source = NULL;
+
+    if (index >= ANALYZER_BATCH_FRAME_COUNT || output == NULL ||
+        g_last_batch_feature_count == 0u)
+    {
+        return false;
+    }
+    length = g_last_batch_packets[index].frame_length;
+    if (capacity < length || length == 0u)
+    {
+        return false;
+    }
+    if (index < PICO_ML_BATCH_STRIDE_FRAMES)
+    {
+        source = g_last_batch_frames[index];
+    }
+    else if (gp_last_batch_tail_frames != NULL)
+    {
+        source =
+            gp_last_batch_tail_frames + (index - PICO_ML_BATCH_STRIDE_FRAMES) *
+                                            ANALYZER_MAXIMUM_FRAME_LENGTH;
+    }
+    if (source == NULL)
+    {
+        return false;
+    }
+    memcpy(output, source, length);
+    if (metadata != NULL)
+    {
+        *metadata = g_last_batch_packets[index];
+    }
+    return true;
+}
+
+static bool
+analyzer_process_ethernet_frame_internal (const uint8_t * frame, size_t length,
+                                          uint64_t            timestamp_us,
+                                          analyzer_result_t * result)
 {
     ethernet_payload_t payload;
-    const uint8_t *    source = NULL;
+    const uint8_t *    source      = NULL;
     const uint8_t *    destination = NULL;
 
     if (frame == NULL || result == NULL || length < ETHERNET_HEADER_SIZE)
@@ -1768,4 +1898,40 @@ analyzer_process_ethernet_frame (const uint8_t * frame, size_t length,
                                 result);
     }
     return false;
+}
+
+bool
+analyzer_process_ethernet_capture (const uint8_t * frame, size_t length,
+                                   uint64_t            timestamp_us,
+                                   uint32_t            capture_sequence,
+                                   analyzer_result_t * result)
+{
+    bool parsed = false;
+
+    gp_current_frame           = frame;
+    g_current_frame_length     = length;
+    g_current_capture_sequence = capture_sequence;
+    parsed = analyzer_process_ethernet_frame_internal(frame, length,
+                                                      timestamp_us, result);
+    gp_current_frame       = NULL;
+    g_current_frame_length = 0u;
+    return parsed;
+}
+
+bool
+analyzer_process_ethernet_replay (const uint8_t * frame, size_t length,
+                                  uint64_t            timestamp_us,
+                                  analyzer_result_t * result)
+{
+    return analyzer_process_ethernet_capture(
+        frame, length, timestamp_us, ++g_legacy_capture_sequence, result);
+}
+
+bool
+analyzer_process_ethernet_frame (const uint8_t * frame, size_t length,
+                                 uint64_t            timestamp_us,
+                                 analyzer_result_t * result)
+{
+    return analyzer_process_ethernet_replay(frame, length, timestamp_us,
+                                            result);
 }

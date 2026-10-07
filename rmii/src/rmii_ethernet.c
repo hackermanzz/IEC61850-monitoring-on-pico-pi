@@ -5,6 +5,7 @@
  */
 
 #include "rmii_ethernet.h"
+#include "rmii_frame.h"
 
 #include <string.h>
 
@@ -27,33 +28,24 @@ enum
     ETHERNET_MIN_FRAME_SIZE             = 60U,
     ETHERNET_HEADER_SIZE                = 14U,
     ETHERNET_MAC_ADDRESS_LENGTH         = 6U,
-    ETHERNET_FCS_OCTET_OFFSET_2         = 2U,
-    ETHERNET_FCS_OCTET_OFFSET_3         = 3U,
     ETHERNET_MTU_SIZE                   = 1500U,
     ETHERNET_MAC_OUI_LAST_OFFSET        = 2U,
     ETHERNET_UNIQUE_ID_START_OFFSET     = 5U,
     RMII_RX_SAMPLE_WORD_COUNT           = 3900U,
-    RMII_SAMPLES_PER_WORD               = 16U,
-    RMII_SAMPLE_WORD_SHIFT              = 4U,
-    RMII_SAMPLE_WORD_INDEX_MASK         = 15U,
     RMII_DIBIT_WIDTH_BITS               = 2U,
     RMII_DIBITS_PER_BYTE                = 4U,
     RMII_BITS_PER_OCTET                 = 8U,
     RMII_DIBIT_VALUE_MASK               = 3U,
-    RMII_CAPTURE_END_SENTINEL           = 255U,
-    RMII_CYCLES_PER_DIBIT               = 10U,
-    RMII_DIBIT_ROUNDING_BIAS            = 5U,
     RMII_PREAMBLE_DIBIT_COUNT           = 31U,
     RMII_PIO_DATA_SYMBOL                = 4U,
     RMII_PIO_PREAMBLE_SYMBOL            = 5U,
     RMII_PIO_SFD_SYMBOL                 = 7U,
-    RMII_DIBIT_STATE_SFD                = 3U,
-    RMII_CRC_SECOND_OCTET_SHIFT         = 8U,
-    RMII_CRC_THIRD_OCTET_SHIFT          = 16U,
-    RMII_CRC_FOURTH_OCTET_SHIFT         = 24U,
-    RMII_CRS_DV_PIN_OFFSET              = 2U,
     RMII_PIO_TX_FIFO_BYTE_OFFSET        = 3U,
-    RMII_RECEIVE_PIN_COUNT              = 3U,
+    RMII_RECEIVE_DATA_PIN_COUNT         = 2U,
+    RMII_CRS_DV_PIN_COUNT               = 1U,
+    RMII_CRS_DV_PIN_DEFAULT_OFFSET      = 2U,
+    RMII_CRS_DV_PIN_UNSPECIFIED         = 0U,
+    RMII_TRANSMIT_PIN_COUNT             = 3U,
     RMII_MDIO_PIN_COUNT                 = 2U,
     MDIO_PREAMBLE_BIT_COUNT             = 32U,
     MDIO_ADDRESS_FIELD_BIT_COUNT        = 5U,
@@ -66,7 +58,6 @@ enum
     MDIO_PHY_STATUS_REGISTER            = 1U,
     MDIO_PHY_ADVERTISEMENT_REGISTER     = 4U,
     MDIO_VENDOR_STATUS_REGISTER         = 31U,
-    PHY_STATUS_LINK_BIT                 = 4U,
     PHY_STATUS_LINK_MASK                = 4U,
     RMII_RECEIVE_READY_WORD_COUNT       = 4U,
     RMII_SAMPLE_WORDS_PER_CAPTURE       = 4U,
@@ -74,8 +65,6 @@ enum
     ETHERNET_PHY_DIAGNOSTIC_INTERVAL_MS = 2000U,
 };
 
-#define ETHERNET_CRC_INITIAL_VALUE UINT32_MAX
-#define ETHERNET_CRC_OCTET_MASK UINT8_MAX
 #define ETHERNET_PHY_ID_UNDRIVEN_VALUE UINT16_MAX
 #define ETHERNET_MAC_OUI_BYTE_0 0xb8U
 #define ETHERNET_MAC_OUI_BYTE_1 0x27U
@@ -83,7 +72,7 @@ enum
 #define ETHERNET_PHY_AUTONEGOTIATION_ADVERTISEMENT 0x61U
 #define ETHERNET_PHY_AUTONEGOTIATION_RESTART 0x1200U
 
-#define ETHERNET_FRAME_MAX_SIZE 1518U
+#define ETHERNET_FRAME_MAX_SIZE RMII_FRAME_MAX_BYTES
 #define ETHERNET_PREAMBLE_SIZE 8U
 #define ETHERNET_FCS_SIZE 4U
 #define ETHERNET_IFG_SIZE 12U
@@ -96,6 +85,7 @@ enum
 #define PICO_RMII_ETHERNET_SM_RX (g_rmii_eth_netif_config.pio_sm_start)
 #define PICO_RMII_ETHERNET_SM_TX (g_rmii_eth_netif_config.pio_sm_start + 1)
 #define PICO_RMII_ETHERNET_RX_PIN (g_rmii_eth_netif_config.rx_pin_start)
+#define PICO_RMII_ETHERNET_CRS_DV_PIN (g_rmii_eth_netif_config.crs_dv_pin)
 #define PICO_RMII_ETHERNET_TX_PIN (g_rmii_eth_netif_config.tx_pin_start)
 #define PICO_RMII_ETHERNET_MDIO_PIN (g_rmii_eth_netif_config.mdio_pin_start)
 #define PICO_RMII_ETHERNET_MDC_PIN (g_rmii_eth_netif_config.mdio_pin_start + 1)
@@ -175,13 +165,12 @@ capture_queue_push (const uint8_t * frame, uint16_t len, uint32_t seq,
 // 1.25 ms which covers a maximum size frame at 10 Mbps
 static uint32_t g_rx_samples[RMII_RX_SAMPLE_WORD_COUNT];
 
-static uint8_t       g_rx_frame[ETHERNET_FRAME_MAX_SIZE];
+/* CRC validation needs the complete frame plus its four FCS octets. */
+static uint8_t       g_rx_frame[RMII_FRAME_MAX_BYTES + RMII_FRAME_FCS_BYTES];
 static uint8_t       g_tx_frame[ETHERNET_FRAME_MAX_SIZE];
 static uint8_t       g_tx_frame_bits[ETHERNET_TX_BUFFER_SIZE];
 static uint64_t      g_rx_frame_timestamp_us;
 static volatile bool g_rx_frame_completed;
-
-static const uint32_t g_ethernet_polynomial_le = 0xedb88320U;
 
 static bool
 rmii_pin_ranges_overlap (uint first_start, uint first_count, uint second_start,
@@ -193,159 +182,6 @@ rmii_pin_ranges_overlap (uint first_start, uint first_count, uint second_start,
     return (first_start < second_end) && (second_start < first_end);
 }
 
-static uint32_t
-ethernet_frame_crc (const uint8_t * data, size_t length)
-{
-    uint32_t crc = ETHERNET_CRC_INITIAL_VALUE;
-
-    for (size_t index = 0U; index < length; index++)
-    {
-        uint8_t current_octet = data[index];
-
-        for (uint8_t bit = 0U; bit < RMII_BITS_PER_OCTET; bit++)
-        {
-            if (((crc ^ current_octet) & 1U) != 0U)
-            {
-                crc >>= 1;
-                crc ^= g_ethernet_polynomial_le;
-            }
-            else
-            {
-                crc >>= 1;
-            }
-            current_octet >>= 1;
-        }
-    }
-
-    return ~crc;
-}
-
-static size_t
-ethernet_frame_length (const uint8_t * data, size_t length)
-{
-    uint32_t crc = ETHERNET_CRC_INITIAL_VALUE;
-
-    for (size_t index = 0U; index < length; index++)
-    {
-        uint8_t current_octet = data[index];
-
-        for (uint8_t bit = 0U; bit < RMII_BITS_PER_OCTET; bit++)
-        {
-            if (((crc ^ current_octet) & 1U) != 0U)
-            {
-                crc >>= 1;
-                crc ^= g_ethernet_polynomial_le;
-            }
-            else
-            {
-                crc >>= 1;
-            }
-            current_octet >>= 1;
-        }
-
-        size_t remaining_length = length - index - 1U;
-        if (remaining_length >= ETHERNET_FCS_SIZE)
-        {
-            uint32_t        inverted_crc = ~crc;
-            const uint8_t * fcs          = &data[index + 1U];
-
-            if ((fcs[0] ==
-                 (uint8_t) (inverted_crc & ETHERNET_CRC_OCTET_MASK)) &&
-                (fcs[1] ==
-                 (uint8_t) ((inverted_crc >> RMII_CRC_SECOND_OCTET_SHIFT) &
-                            ETHERNET_CRC_OCTET_MASK)) &&
-                (fcs[ETHERNET_FCS_OCTET_OFFSET_2] ==
-                 (uint8_t) ((inverted_crc >> RMII_CRC_THIRD_OCTET_SHIFT) &
-                            ETHERNET_CRC_OCTET_MASK)) &&
-                (fcs[ETHERNET_FCS_OCTET_OFFSET_3] ==
-                 (uint8_t) ((inverted_crc >> RMII_CRC_FOURTH_OCTET_SHIFT) &
-                            ETHERNET_CRC_OCTET_MASK)))
-            {
-                return index + 1U;
-            }
-        }
-    }
-
-    return 0;
-}
-
-// Recovers dibits from the oversampled capture. Each dibit is held for about
-// ten cycles, so a run of constant data of length L is round(L / 10) dibits.
-// Rounding per run means the 9 cycle runs the PHY produces do not accumulate
-// into a lost dibit the way a fixed cadence sampler does.
-static uint
-rmii_decode_samples (const uint32_t * samples, uint words, uint8_t * out,
-                     uint out_size)
-{
-    uint    total    = words * RMII_SAMPLES_PER_WORD;
-    uint    prev     = samples[0] & RMII_DIBIT_VALUE_MASK;
-    uint    run      = 0;
-    bool    in_frame = false;
-    uint    out_len  = 0;
-    uint    dibits   = 0;
-    uint8_t byte     = 0;
-
-    for (uint i = 0; i <= total; i++)
-    {
-        // one past the end flushes the final run
-        uint v = (i < total) ? ((samples[i >> RMII_SAMPLE_WORD_SHIFT] >>
-                                 ((i & RMII_SAMPLE_WORD_INDEX_MASK) *
-                                  RMII_DIBIT_WIDTH_BITS)) &
-                                RMII_DIBIT_VALUE_MASK)
-                             : RMII_CAPTURE_END_SENTINEL;
-
-        if (v == prev)
-        {
-            run++;
-
-            continue;
-        }
-
-        uint n = (run + RMII_DIBIT_ROUNDING_BIAS) / RMII_CYCLES_PER_DIBIT;
-
-        if (n == 0)
-        {
-            n = 1;
-        }
-
-        // the preamble is a run of 01, the SFD ends with the first 11 dibit,
-        // any further dibits in that same run are already frame data
-        uint first = 0;
-
-        if (!in_frame)
-        {
-            if (prev == RMII_DIBIT_STATE_SFD)
-            {
-                in_frame = true;
-                first    = 1;
-            }
-            else
-            {
-                prev = v;
-                run  = 1;
-
-                continue;
-            }
-        }
-
-        for (uint k = first; k < n && out_len < out_size; k++)
-        {
-            byte |= prev << (dibits * RMII_DIBIT_WIDTH_BITS);
-
-            if (++dibits == RMII_DIBITS_PER_BYTE)
-            {
-                out[out_len++] = byte;
-                byte           = 0;
-                dibits         = 0;
-            }
-        }
-
-        prev = v;
-        run  = 1;
-    }
-
-    return out_len;
-}
 
 static void
 rmii_mdio_clock_out (int bit)
@@ -553,7 +389,7 @@ netif_rmii_ethernet_output (struct netif * netif, struct pbuf * p)
         return ERR_BUF;
     }
 
-    uint32_t crc = ethernet_frame_crc(g_tx_frame, total_length);
+    uint32_t crc = rmii_frame_crc(g_tx_frame, total_length);
 
     dma_channel_wait_for_finish_blocking(g_tx_dma_chan);
 
@@ -601,7 +437,7 @@ rmii_rx_falling_isr (uint gpio, uint32_t events)
 {
     (void) events;
 
-    if ((PICO_RMII_ETHERNET_RX_PIN + RMII_CRS_DV_PIN_OFFSET) == gpio)
+    if (PICO_RMII_ETHERNET_CRS_DV_PIN == gpio)
     {
         // CRS_DV falling marks the end of the received frame. Capture here so
         // queue timestamps do not include CRC checking or packet processing.
@@ -610,9 +446,9 @@ rmii_rx_falling_isr (uint gpio, uint32_t events)
         pio_sm_set_enabled(PICO_RMII_ETHERNET_PIO, PICO_RMII_ETHERNET_SM_RX,
                            false);
         dma_channel_abort(g_rx_dma_chan);
-        gpio_set_irq_enabled_with_callback(
-            PICO_RMII_ETHERNET_RX_PIN + RMII_CRS_DV_PIN_OFFSET,
-            GPIO_IRQ_EDGE_FALL, false, rmii_rx_falling_isr);
+        gpio_set_irq_enabled_with_callback(PICO_RMII_ETHERNET_CRS_DV_PIN,
+                                           GPIO_IRQ_EDGE_FALL, false,
+                                           rmii_rx_falling_isr);
     }
 }
 
@@ -791,19 +627,29 @@ netif_rmii_ethernet_low_init (struct netif * netif)
         (PICO_RMII_ETHERNET_SM_TX >= NUM_PIO_STATE_MACHINES) ||
         (PICO_RMII_ETHERNET_SM_RX >= NUM_PIO_STATE_MACHINES) ||
         (PICO_RMII_ETHERNET_RX_PIN >
-         (NUM_BANK0_GPIOS - RMII_RECEIVE_PIN_COUNT)) ||
+         (NUM_BANK0_GPIOS - RMII_RECEIVE_DATA_PIN_COUNT)) ||
+        (PICO_RMII_ETHERNET_CRS_DV_PIN >= NUM_BANK0_GPIOS) ||
         (PICO_RMII_ETHERNET_TX_PIN >
-         (NUM_BANK0_GPIOS - RMII_RECEIVE_PIN_COUNT)) ||
+         (NUM_BANK0_GPIOS - RMII_TRANSMIT_PIN_COUNT)) ||
         (PICO_RMII_ETHERNET_MDIO_PIN >
          (NUM_BANK0_GPIOS - RMII_MDIO_PIN_COUNT)) ||
         rmii_pin_ranges_overlap(
-            PICO_RMII_ETHERNET_RX_PIN, RMII_RECEIVE_PIN_COUNT,
-            PICO_RMII_ETHERNET_TX_PIN, RMII_RECEIVE_PIN_COUNT) ||
+            PICO_RMII_ETHERNET_RX_PIN, RMII_RECEIVE_DATA_PIN_COUNT,
+            PICO_RMII_ETHERNET_TX_PIN, RMII_TRANSMIT_PIN_COUNT) ||
         rmii_pin_ranges_overlap(
-            PICO_RMII_ETHERNET_RX_PIN, RMII_RECEIVE_PIN_COUNT,
+            PICO_RMII_ETHERNET_RX_PIN, RMII_RECEIVE_DATA_PIN_COUNT,
             PICO_RMII_ETHERNET_MDIO_PIN, RMII_MDIO_PIN_COUNT) ||
         rmii_pin_ranges_overlap(
-            PICO_RMII_ETHERNET_TX_PIN, RMII_RECEIVE_PIN_COUNT,
+            PICO_RMII_ETHERNET_TX_PIN, RMII_TRANSMIT_PIN_COUNT,
+            PICO_RMII_ETHERNET_MDIO_PIN, RMII_MDIO_PIN_COUNT) ||
+        rmii_pin_ranges_overlap(
+            PICO_RMII_ETHERNET_CRS_DV_PIN, RMII_CRS_DV_PIN_COUNT,
+            PICO_RMII_ETHERNET_RX_PIN, RMII_RECEIVE_DATA_PIN_COUNT) ||
+        rmii_pin_ranges_overlap(
+            PICO_RMII_ETHERNET_CRS_DV_PIN, RMII_CRS_DV_PIN_COUNT,
+            PICO_RMII_ETHERNET_TX_PIN, RMII_TRANSMIT_PIN_COUNT) ||
+        rmii_pin_ranges_overlap(
+            PICO_RMII_ETHERNET_CRS_DV_PIN, RMII_CRS_DV_PIN_COUNT,
             PICO_RMII_ETHERNET_MDIO_PIN, RMII_MDIO_PIN_COUNT))
     {
         g_rmii_init_error = ERR_ARG;
@@ -884,6 +730,13 @@ netif_rmii_ethernet_init (struct netif * netif, rmii_ethernet_config_t * config)
         memcpy(&g_rmii_eth_netif_config, config,
                sizeof(g_rmii_eth_netif_config));
     }
+    if (g_rmii_eth_netif_config.crs_dv_pin == RMII_CRS_DV_PIN_UNSPECIFIED)
+    {
+        /* Preserve the original adjacent RX0/RX1/CRS pin mapping. */
+        g_rmii_eth_netif_config.crs_dv_pin =
+            g_rmii_eth_netif_config.rx_pin_start +
+            RMII_CRS_DV_PIN_DEFAULT_OFFSET;
+    }
 
     if (!g_frame_snapshot_lock_initialized)
     {
@@ -923,6 +776,11 @@ rmii_publish_frame (size_t frame_length)
     capture_queue_push(g_rx_frame, frame_copy_length, frame_sequence,
                        g_rx_frame_timestamp_us);
 
+    if (g_rmii_eth_netif_config.capture_only)
+    {
+        return;
+    }
+
     struct pbuf * packet =
         pbuf_alloc(PBUF_RAW, (u16_t) frame_length, PBUF_POOL);
     if (packet == NULL)
@@ -960,7 +818,7 @@ rmii_decode_captured_frame (bool frame_completed)
         return 0U;
     }
 
-    uint decoded_length = rmii_decode_samples(
+    size_t decoded_length = rmii_frame_decode_samples(
         g_rx_samples, captured_bytes / RMII_SAMPLE_WORDS_PER_CAPTURE,
         g_rx_frame, sizeof(g_rx_frame));
     if (decoded_length == 0U)
@@ -968,7 +826,7 @@ rmii_decode_captured_frame (bool frame_completed)
         return 0U;
     }
 
-    return ethernet_frame_length(g_rx_frame, decoded_length);
+    return rmii_frame_find_length(g_rx_frame, decoded_length);
 }
 
 static void
@@ -983,10 +841,11 @@ rmii_rearm_receiver (void)
         count_of(g_rx_samples), false);
     dma_channel_start(g_rx_dma_chan);
     rmii_ethernet_phy_rx_init(PICO_RMII_ETHERNET_PIO, PICO_RMII_ETHERNET_SM_RX,
-                              g_rx_sm_offset, PICO_RMII_ETHERNET_RX_PIN);
-    gpio_set_irq_enabled_with_callback(
-        PICO_RMII_ETHERNET_RX_PIN + RMII_CRS_DV_PIN_OFFSET, GPIO_IRQ_EDGE_FALL,
-        true, &rmii_rx_falling_isr);
+                              g_rx_sm_offset, PICO_RMII_ETHERNET_RX_PIN,
+                              PICO_RMII_ETHERNET_CRS_DV_PIN);
+    gpio_set_irq_enabled_with_callback(PICO_RMII_ETHERNET_CRS_DV_PIN,
+                                       GPIO_IRQ_EDGE_FALL, true,
+                                       &rmii_rx_falling_isr);
 }
 
 static void
@@ -1031,7 +890,8 @@ rmii_poll_phy (absolute_time_t * next_link_check,
         }
 
         bool link_up = (status & PHY_STATUS_LINK_MASK) != 0U;
-        if ((netif_is_link_up(gp_rmii_eth_netif) != 0) != link_up)
+        if (!g_rmii_eth_netif_config.capture_only &&
+            ((netif_is_link_up(gp_rmii_eth_netif) != 0) != link_up))
         {
             if (link_up)
             {
@@ -1073,7 +933,10 @@ netif_rmii_ethernet_poll (void)
 
     // Service link management after RX work because MDIO bit-banging is slow.
     rmii_poll_phy(&next_link_check, &next_phy_dump);
-    sys_check_timeouts();
+    if (!g_rmii_eth_netif_config.capture_only)
+    {
+        sys_check_timeouts();
+    }
 }
 
 void

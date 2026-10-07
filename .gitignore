@@ -86,3 +86,22 @@ build/
 gdroot-g2.crt.pem
 CMakeLists.txt
 rmii-upstream-history.bundle
+
+# Keep the project-specific static-analysis gate available in source control.
+!tools/check_barr_tidy.ps1
+
+# Keep the cohesive project's documentation and build/check entry points.
+!README.md
+!**/CMakeLists.txt
+!pico_sdk_import.cmake
+!rmii/pico_sdk_import.cmake
+!tools/*.ps1
+
+# Local recovery archives and audit outputs are not project sources.
+/.cleanup-backups/
+/.audit-work/
+/build*/
+/CMakeFiles/
+/CMakeCache.txt
+/cmake_install.cmake
+*.uf2

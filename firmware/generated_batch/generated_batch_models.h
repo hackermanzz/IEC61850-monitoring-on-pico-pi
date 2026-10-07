@@ -5,23 +5,24 @@
 #include <stdint.h>
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
 #define PICO_ML_BATCH_SCHEMA_VERSION UINT32_C(1)
 #define PICO_ML_BATCH_SIZE_FRAMES UINT32_C(4)
 #define PICO_ML_BATCH_STRIDE_FRAMES UINT32_C(2)
 #define PICO_ML_BATCH_SCHEMA_FINGERPRINT                                       \
-  "82e705daa7f6d5cb5b9bf312c81cd51ce9eba385771c183e3eda5cfb71f3521b"
+    "82e705daa7f6d5cb5b9bf312c81cd51ce9eba385771c183e3eda5cfb71f3521b"
 #define PICO_ML_BATCH_GOOSE_THRESHOLD 0.0261559281f
 #define PICO_ML_BATCH_SV_THRESHOLD 0.945220292f
 
 #define PICO_ML_BATCH_SV_CHANNEL_COUNT UINT32_C(6)
-extern const uint32_t
-    g_pico_ml_batch_sv_channel_offsets[PICO_ML_BATCH_SV_CHANNEL_COUNT];
-extern const char g_pico_ml_batch_sv_channel_format[];
-extern const float
-    g_pico_ml_batch_sv_relative_scale[PICO_ML_BATCH_SV_CHANNEL_COUNT];
+    extern const uint32_t
+        g_pico_ml_batch_sv_channel_offsets[PICO_ML_BATCH_SV_CHANNEL_COUNT];
+    extern const char g_pico_ml_batch_sv_channel_format[];
+    extern const float
+        g_pico_ml_batch_sv_relative_scale[PICO_ML_BATCH_SV_CHANNEL_COUNT];
 
 #define PICO_ML_BATCH_WAVE_EPSILON 9.99999997e-07f
 #define PICO_ML_BATCH_WAVE_RELATIVE_JUMP_LIMIT 0.0500000007f
@@ -35,18 +36,19 @@ extern const float
 #define PICO_ML_BATCH_TIMING_MISSING_AGE_SECONDS 10.0f
 #define PICO_ML_BATCH_TIMING_HISTORY_FRAMES UINT32_C(32)
 
-enum {
-  PICO_ML_BATCH_GOOSE_FEATURE_COUNT = 52,
-  PICO_ML_BATCH_SV_FEATURE_COUNT = 72
-};
-float pico_ml_batch_predict_goose(
-    const float features[PICO_ML_BATCH_GOOSE_FEATURE_COUNT]);
-float pico_ml_batch_predict_sv(
-    const float features[PICO_ML_BATCH_SV_FEATURE_COUNT]);
-extern const char *const
-    g_pico_ml_batch_goose_feature_names[PICO_ML_BATCH_GOOSE_FEATURE_COUNT];
-extern const char *const
-    g_pico_ml_batch_sv_feature_names[PICO_ML_BATCH_SV_FEATURE_COUNT];
+    enum
+    {
+        PICO_ML_BATCH_GOOSE_FEATURE_COUNT = 52,
+        PICO_ML_BATCH_SV_FEATURE_COUNT    = 72
+    };
+    float pico_ml_batch_predict_goose (
+        const float features[PICO_ML_BATCH_GOOSE_FEATURE_COUNT]);
+    float pico_ml_batch_predict_sv (
+        const float features[PICO_ML_BATCH_SV_FEATURE_COUNT]);
+    extern const char * const
+        g_pico_ml_batch_goose_feature_names[PICO_ML_BATCH_GOOSE_FEATURE_COUNT];
+    extern const char * const
+        g_pico_ml_batch_sv_feature_names[PICO_ML_BATCH_SV_FEATURE_COUNT];
 
 #ifdef __cplusplus
 }

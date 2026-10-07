@@ -19,10 +19,12 @@ struct netif_rmii_ethernet_config
 {
     PIO       pio;
     uint      pio_sm_start;   // uses 2 PIO sm's
-    uint      rx_pin_start;   // RX0, RX1, CRS
+    uint      rx_pin_start;   // RX0, RX1
     uint      tx_pin_start;   // TX0, TX1, TX-EN
     uint      mdio_pin_start; // MDIO, MDC
     uint8_t * mac_addr;       // 6 bytes
+    bool      capture_only;   // queue frames without passing them to lwIP
+    uint      crs_dv_pin; // 0 selects rx_pin_start + 2; otherwise CRS_DV GPIO
 };
 typedef struct netif_rmii_ethernet_config rmii_ethernet_config_t;
 
@@ -32,7 +34,9 @@ typedef struct netif_rmii_ethernet_config rmii_ethernet_config_t;
      .rx_pin_start   = 6,                                                      \
      .tx_pin_start   = 10,                                                     \
      .mdio_pin_start = 14,                                                     \
-     .mac_addr       = NULL}
+     .mac_addr       = NULL,                                                   \
+     .capture_only   = false,                                                  \
+     .crs_dv_pin     = 0}
 
 err_t netif_rmii_ethernet_init (struct netif *           netif,
                                 rmii_ethernet_config_t * config);

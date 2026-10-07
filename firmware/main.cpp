@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 
 #include <cerrno>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -88,7 +89,8 @@ bool parse_values(char* context, float* values, std::size_t expected)
         errno = 0;
         char* end = nullptr;
         const float value = std::strtof(token, &end);
-        if (errno == ERANGE || end == token || *end != '\0')
+        if (errno == ERANGE || end == token || *end != '\0' ||
+            !std::isfinite(value))
         {
             std::printf("error: invalid number at feature %u: %s\r\n",
                         static_cast<unsigned>(index), token);

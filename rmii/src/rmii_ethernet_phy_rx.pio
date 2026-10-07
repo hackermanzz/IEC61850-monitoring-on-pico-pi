@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: BSD-3-Clause
  */
 
-; Oversampled receive: from the moment carrier appears, sample RXD0/RXD1 once
-; per REF_CLK cycle and let software recover the dibits.
+; Oversampled receive: wait for CRS_DV to become active, then sample RXD0/RXD1
+; once per REF_CLK cycle and let software recover the dibits. The jump pin is
+; configured at runtime so CRS_DV need not be adjacent to the RX data pins.
 ;
 ; At 10 Mbps the PHY repeats each dibit about ten times, but measurement on this
 ; board showed runs of 9 cycles as well as 10, so any fixed cadence sampler
@@ -13,29 +14,39 @@
 ; decoding in software tolerates that, at the cost of 16 bits of capture per
 ; dibit.
 .program rmii_ethernet_phy_rx_data
-    wait 0 pin 2        ; idle
-    wait 1 pin 2        ; carrier detected, capture from here
+wait_for_idle:
+    jmp pin wait_for_idle
+wait_for_carrier:
+    jmp pin capture
+    jmp wait_for_carrier
 .wrap_target
+capture:
     in pins, 2
 .wrap
 
 % c-sdk {
 
-static inline void rmii_ethernet_phy_rx_init(PIO pio, uint sm, uint offset, uint pin) {
-    pio_sm_set_consecutive_pindirs(pio, sm, pin, 3, false);
+#include "hardware/clocks.h"
+
+static inline void rmii_ethernet_phy_rx_init(PIO pio, uint sm, uint offset,
+                                            uint pin, uint crs_dv_pin) {
+    pio_sm_set_consecutive_pindirs(pio, sm, pin, 2, false);
 
     pio_sm_config c = rmii_ethernet_phy_rx_data_program_get_default_config(offset);
     sm_config_set_in_pins(&c, pin);
+    sm_config_set_jmp_pin(&c, crs_dv_pin);
 
     pio_gpio_init(pio, pin);
     pio_gpio_init(pio, pin + 1);
-    pio_gpio_init(pio, pin + 2);
+    pio_gpio_init(pio, crs_dv_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, crs_dv_pin, 1, false);
 
     // 16 samples per 32 bit push, one dma transfer per 16 cycles
     sm_config_set_in_shift(&c, true, true, 32);
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
 
-    sm_config_set_clkdiv(&c, 1);
+    // Keep the receive sampler at the PHY's 50 MHz rate when clk_sys changes.
+    sm_config_set_clkdiv(&c, (float)clock_get_hz(clk_sys) / 50000000.0f);
 
     pio_sm_init(pio, sm, offset, &c);
     pio_sm_set_enabled(pio, sm, true);

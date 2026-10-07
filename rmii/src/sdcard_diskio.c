@@ -7,6 +7,33 @@
 #define SDCARD_DISK_DRIVE 0u
 #define SDCARD_SECTOR_SIZE 512u
 
+static DRESULT
+sdcard_disk_check_request (BYTE physical_drive, const void * buffer,
+                           LBA_t sector, UINT count)
+{
+    uint32_t sector_count = 0u;
+
+    if (physical_drive != SDCARD_DISK_DRIVE || buffer == NULL || count == 0u ||
+        count > UINT32_MAX / SDCARD_SECTOR_SIZE)
+    {
+        return RES_PARERR;
+    }
+    if (!sd_card_is_ready())
+    {
+        return RES_NOTRDY;
+    }
+    if (sd_card_sector_count(&sector_count) != SD_CARD_OK)
+    {
+        return RES_ERROR;
+    }
+    /* Validate the whole range before a write can partially change the card. */
+    if (count > sector_count || sector > sector_count - count)
+    {
+        return RES_PARERR;
+    }
+    return RES_OK;
+}
+
 DSTATUS
 disk_initialize(BYTE physical_drive)
 {
@@ -34,14 +61,12 @@ disk_read(BYTE physical_drive, BYTE * buffer, LBA_t sector, UINT count)
 {
     uint32_t current_sector = (uint32_t) sector;
     UINT     sector_index   = 0u;
+    DRESULT  result =
+        sdcard_disk_check_request(physical_drive, buffer, sector, count);
 
-    if (physical_drive != SDCARD_DISK_DRIVE || buffer == NULL || count == 0u)
+    if (result != RES_OK)
     {
-        return RES_PARERR;
-    }
-    if (!sd_card_is_ready() || sector > UINT32_MAX - (count - 1u))
-    {
-        return RES_NOTRDY;
+        return result;
     }
 
     for (sector_index = 0u; sector_index < count; ++sector_index)
@@ -63,14 +88,12 @@ disk_write(BYTE physical_drive, const BYTE * buffer, LBA_t sector, UINT count)
 {
     uint32_t current_sector = (uint32_t) sector;
     UINT     sector_index   = 0u;
+    DRESULT  result =
+        sdcard_disk_check_request(physical_drive, buffer, sector, count);
 
-    if (physical_drive != SDCARD_DISK_DRIVE || buffer == NULL || count == 0u)
+    if (result != RES_OK)
     {
-        return RES_PARERR;
-    }
-    if (!sd_card_is_ready() || sector > UINT32_MAX - (count - 1u))
-    {
-        return RES_NOTRDY;
+        return result;
     }
 
     for (sector_index = 0u; sector_index < count; ++sector_index)

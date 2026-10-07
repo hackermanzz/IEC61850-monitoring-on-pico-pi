@@ -43,6 +43,7 @@
 #define SD_CARD_CSD_V2_BLOCKS_PER_UNIT 1024u
 #define SD_CARD_CSD_V1_SIZE_MULT_BASE_SHIFT 2u
 #define SD_CARD_PIN_RMII_RESERVED_MAX 8u
+#define SD_CARD_PIN_RMII_CRS_DV 13u
 #define SD_CARD_PIN_RMII_RESERVED_EXTRA 15u
 #define SD_CARD_PIN_PICO_W_INTERNAL_FIRST 23u
 #define SD_CARD_PIN_PICO_W_INTERNAL_LAST 25u
@@ -368,6 +369,7 @@ static int
 sd_card_pin_is_rmii_reserved (uint32_t pin)
 {
     return pin <= SD_CARD_PIN_RMII_RESERVED_MAX ||
+           pin == SD_CARD_PIN_RMII_CRS_DV ||
            pin == SD_CARD_PIN_RMII_RESERVED_EXTRA;
 }
 

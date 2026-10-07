@@ -165,7 +165,7 @@ sdcard_fs_is_mounted (void)
 sdcard_fs_result_t
 sdcard_fs_create (const char * path)
 {
-    FIL                file;
+    FIL                file       = {0};
     FRESULT            result     = FR_OK;
     sdcard_fs_result_t api_result = sdcard_fs_check_path(path);
 
@@ -192,7 +192,7 @@ sdcard_fs_result_t
 sdcard_fs_read (const char * path, uint32_t offset, void * buffer,
                 uint32_t capacity, uint32_t * bytes_read)
 {
-    FIL                file;
+    FIL                file        = {0};
     FRESULT            result      = FR_OK;
     UINT               transferred = 0u;
     sdcard_fs_result_t api_result  = sdcard_fs_check_path(path);
@@ -243,7 +243,7 @@ sdcard_fs_result_t
 sdcard_fs_update (const char * path, uint32_t offset, const void * data,
                   uint32_t length, uint32_t * bytes_written)
 {
-    FIL                file;
+    FIL                file        = {0};
     FRESULT            result      = FR_OK;
     UINT               transferred = 0u;
     sdcard_fs_result_t api_result  = sdcard_fs_check_path(path);
@@ -303,7 +303,7 @@ sdcard_fs_update (const char * path, uint32_t offset, const void * data,
 sdcard_fs_result_t
 sdcard_fs_delete (const char * path)
 {
-    FILINFO            info;
+    FILINFO            info       = {0};
     FRESULT            result     = FR_OK;
     sdcard_fs_result_t api_result = sdcard_fs_check_path(path);
 
@@ -334,7 +334,7 @@ sdcard_fs_delete (const char * path)
 sdcard_fs_result_t
 sdcard_fs_stat (const char * path, sdcard_fs_file_info_t * file_info)
 {
-    FILINFO            info;
+    FILINFO            info       = {0};
     FRESULT            result     = FR_OK;
     sdcard_fs_result_t api_result = sdcard_fs_check_path(path);
 

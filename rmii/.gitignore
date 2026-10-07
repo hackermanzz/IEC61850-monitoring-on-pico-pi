@@ -1,3 +1,6 @@
 # Local CMake build directories. These are generated and must not be committed.
 /build*/
 /CMakeFiles/
+
+# Device-local Wi-Fi and Telegram credentials.
+/src/include/wifi_notification_config.h

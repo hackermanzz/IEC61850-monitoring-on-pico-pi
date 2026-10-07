@@ -7,6 +7,11 @@
 
 #define SDCARD_FS_PATH_MAX 96u
 
+/* Paths are NUL-terminated relative printable-ASCII names, at most PATH_MAX
+ * bytes excluding the terminator. Parent/current-directory segments and drive
+ * prefixes are rejected. All filesystem calls belong to one core; none is ISR
+ * safe. Operations block and must be scheduled outside the capture path. */
+
 typedef enum
 {
     SDCARD_FS_OK = 0,
