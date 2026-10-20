@@ -221,11 +221,14 @@ typedef struct
     uint8_t           boolean_value;
     float             batch[PICO_ML_BATCH_SIZE_FRAMES][GOOSE_FEATURE_COUNT];
     analyzer_packet_metadata_t batch_packets[ANALYZER_BATCH_FRAME_COUNT];
+#if ANALYZER_STORE_WINDOW_FRAMES
     uint8_t                    batch_frames[ANALYZER_BATCH_FRAME_COUNT]
                                            [ANALYZER_MAXIMUM_FRAME_LENGTH];
+#endif
     size_t                     batch_count;
     bool                       has_prediction;
     uint8_t                    previous_label;
+    bool                       gap_suspect;
 } goose_state_t;
 
 typedef struct
@@ -251,11 +254,14 @@ typedef struct
     size_t            wave_delta_next;
     float             batch[PICO_ML_BATCH_SIZE_FRAMES][SV_FEATURE_COUNT];
     analyzer_packet_metadata_t batch_packets[ANALYZER_BATCH_FRAME_COUNT];
+#if ANALYZER_STORE_WINDOW_FRAMES
     uint8_t                    batch_frames[ANALYZER_BATCH_FRAME_COUNT]
                                            [ANALYZER_MAXIMUM_FRAME_LENGTH];
+#endif
     size_t                     batch_count;
     bool                       has_prediction;
     uint8_t                    previous_label;
+    bool                       gap_suspect;
 } sv_state_t;
 
 typedef struct
@@ -297,9 +303,20 @@ static size_t              g_last_batch_feature_count;
 static analyzer_protocol_t g_last_batch_protocol = ANALYZER_PROTOCOL_GOOSE;
 static analyzer_packet_metadata_t
                        g_last_batch_packets[ANALYZER_BATCH_FRAME_COUNT];
+#if ANALYZER_STORE_WINDOW_FRAMES
 static uint8_t         g_last_batch_frames[PICO_ML_BATCH_STRIDE_FRAMES]
                                           [ANALYZER_MAXIMUM_FRAME_LENGTH];
+#define STATE_FRAMES(state) (&(state)->batch_frames[0][0])
+#else
+/* Newest frame of the latest scored window (the frame being processed when
+ * the window completed). The other window frames survive as metadata. */
+static uint8_t g_last_newest_frame[ANALYZER_MAXIMUM_FRAME_LENGTH];
+#define STATE_FRAMES(state) ((uint8_t *) NULL)
+#endif
 static const uint8_t * gp_last_batch_tail_frames;
+static uint32_t        g_gaps_noted;
+static uint32_t        g_streams_kept;
+static uint32_t        g_streams_reset;
 static const uint8_t * gp_current_frame;
 static size_t          g_current_frame_length;
 static uint32_t        g_current_capture_sequence;
@@ -312,8 +329,8 @@ record_batch_packet (analyzer_packet_metadata_t * packets, uint8_t * frames,
 {
     analyzer_packet_metadata_t * metadata = NULL;
 
-    if (packets == NULL || frames == NULL ||
-        batch_index >= ANALYZER_BATCH_FRAME_COUNT || result == NULL ||
+    if (packets == NULL || batch_index >= ANALYZER_BATCH_FRAME_COUNT ||
+        result == NULL ||
         gp_current_frame == NULL ||
         g_current_frame_length > ANALYZER_MAXIMUM_FRAME_LENGTH ||
         identity == NULL)
@@ -336,8 +353,11 @@ record_batch_packet (analyzer_packet_metadata_t * packets, uint8_t * frames,
     memcpy(metadata->source_mac, gp_current_frame + MAC_ADDRESS_LENGTH,
            MAC_ADDRESS_LENGTH);
     memcpy(metadata->destination_mac, gp_current_frame, MAC_ADDRESS_LENGTH);
-    memcpy(frames + batch_index * ANALYZER_MAXIMUM_FRAME_LENGTH,
-           gp_current_frame, g_current_frame_length);
+    if (frames != NULL)
+    {
+        memcpy(frames + batch_index * ANALYZER_MAXIMUM_FRAME_LENGTH,
+               gp_current_frame, g_current_frame_length);
+    }
 }
 
 static float
@@ -1035,13 +1055,22 @@ save_completed_batch_snapshot (analyzer_packet_metadata_t * packets,
     {
         result->batch_packets[index] = packets[index];
         g_last_batch_packets[index]  = packets[index];
+#if ANALYZER_STORE_WINDOW_FRAMES
         if (index < PICO_ML_BATCH_STRIDE_FRAMES)
         {
             memcpy(g_last_batch_frames[index],
                    raw_frames + index * ANALYZER_MAXIMUM_FRAME_LENGTH,
                    packets[index].frame_length);
         }
+#endif
     }
+#if !ANALYZER_STORE_WINDOW_FRAMES
+    if (gp_current_frame != NULL &&
+        g_current_frame_length <= ANALYZER_MAXIMUM_FRAME_LENGTH)
+    {
+        memcpy(g_last_newest_frame, gp_current_frame, g_current_frame_length);
+    }
+#endif
 }
 
 static void
@@ -1058,7 +1087,7 @@ predict_batch (float * batch, size_t feature_count, size_t * batch_count,
     if (batch == NULL || batch_count == NULL || frame == NULL ||
         result == NULL || previous_label == NULL || has_prediction == NULL ||
         predict == NULL || feature_count == 0u || packets == NULL ||
-        raw_frames == NULL || feature_count > SV_FEATURE_COUNT ||
+        feature_count > SV_FEATURE_COUNT ||
         *batch_count >= PICO_ML_BATCH_SIZE_FRAMES)
     {
         return;
@@ -1134,10 +1163,13 @@ predict_batch (float * batch, size_t feature_count, size_t * batch_count,
         memmove(packets + frame_index,
                 packets + frame_index + PICO_ML_BATCH_STRIDE_FRAMES,
                 sizeof(*packets));
-        memmove(raw_frames + frame_index * ANALYZER_MAXIMUM_FRAME_LENGTH,
-                raw_frames + (frame_index + PICO_ML_BATCH_STRIDE_FRAMES) *
-                                 ANALYZER_MAXIMUM_FRAME_LENGTH,
-                ANALYZER_MAXIMUM_FRAME_LENGTH);
+        if (raw_frames != NULL)
+        {
+            memmove(raw_frames + frame_index * ANALYZER_MAXIMUM_FRAME_LENGTH,
+                    raw_frames + (frame_index + PICO_ML_BATCH_STRIDE_FRAMES) *
+                                     ANALYZER_MAXIMUM_FRAME_LENGTH,
+                    ANALYZER_MAXIMUM_FRAME_LENGTH);
+        }
     }
 }
 
@@ -1363,6 +1395,68 @@ update_goose_state (goose_state_t * state, const goose_fields_t * fields,
     g_have_latest_goose = true;
 }
 
+/*
+ * Per stream gap policy (Tribunal 1, FR8). A stream marked gap_suspect checks
+ * its own counter on its next frame. A counter jump WITHOUT a capture gap is
+ * never reset here: that jump is attack evidence and must be scored.
+ */
+static bool
+goose_counter_continuous (const goose_state_t * state,
+                          const goose_fields_t * fields)
+{
+    if (!state->has_st || !state->has_sq)
+    {
+        return true;
+    }
+    if (fields->st_num == state->st_num)
+    {
+        return fields->sq_num == state->sq_num + 1u;
+    }
+    /* New event: stNum steps by one and sqNum restarts at 0 (or 1). */
+    return fields->st_num == state->st_num + 1u && fields->sq_num <= 1u;
+}
+
+static bool
+sv_counter_continuous (const sv_state_t * state, const sv_fields_t * fields)
+{
+    const uint32_t expected_step = (uint32_t) fields->asdu_count;
+    const uint32_t current       = fields->asdus[0].smp_cnt;
+    int64_t        delta         = 0;
+
+    if (!state->has_counter[0])
+    {
+        return true;
+    }
+    delta = (int64_t) current - (int64_t) state->counters[0];
+    /* Normal step, or smpCnt wrapped to 0 at the end of the second. */
+    return delta == (int64_t) expected_step ||
+           (delta < 0 && current < expected_step);
+}
+
+static void
+reset_goose_stream (goose_state_t * state)
+{
+    const uint32_t          key      = state->key;
+    const stream_identity_t identity = state->identity;
+
+    memset(state, 0, sizeof(*state));
+    state->used     = true;
+    state->key      = key;
+    state->identity = identity;
+}
+
+static void
+reset_sv_stream (sv_state_t * state)
+{
+    const uint32_t          key      = state->key;
+    const stream_identity_t identity = state->identity;
+
+    memset(state, 0, sizeof(*state));
+    state->used     = true;
+    state->key      = key;
+    state->identity = identity;
+}
+
 static bool
 process_goose_batch (const uint8_t * source, const uint8_t * destination,
                      const goose_fields_t * fields, uint64_t timestamp_us,
@@ -1378,7 +1472,22 @@ process_goose_batch (const uint8_t * source, const uint8_t * destination,
     bool   boolean_valid = false;
     bool   boolean_value = false;
     size_t feature_index = 0u;
+    bool   stream_reset  = false;
 
+    if (state != NULL && state->gap_suspect)
+    {
+        state->gap_suspect = false;
+        if (goose_counter_continuous(state, fields))
+        {
+            ++g_streams_kept;
+        }
+        else
+        {
+            reset_goose_stream(state);
+            ++g_streams_reset;
+            stream_reset = true;
+        }
+    }
     if (state == NULL)
     {
         if (!g_have_latest_goose || timestamp_us > g_latest_goose_us)
@@ -1394,19 +1503,20 @@ process_goose_batch (const uint8_t * source, const uint8_t * destination,
         return false;
     }
     populate_goose_result(fields, key, result);
+    result->stream_reset = stream_reset;
     result->timestamp_us = timestamp_us;
     calculate_goose_features(state, fields, source, timestamp_us, features,
                              &delta_seconds, &boolean_valid, &boolean_value);
     update_goose_state(state, fields, source, timestamp_us, delta_seconds,
                        boolean_valid, boolean_value);
 
-    record_batch_packet(state->batch_packets, &state->batch_frames[0][0],
+    record_batch_packet(state->batch_packets, STATE_FRAMES(state),
                         state->batch_count, result, &state->identity);
     predict_batch(&state->batch[0][0], GOOSE_FEATURE_COUNT, &state->batch_count,
                   features, result, &state->previous_label,
                   &state->has_prediction, PICO_ML_BATCH_GOOSE_THRESHOLD,
                   goose_predict, GOOSE_BATCH_FEATURE_COUNT,
-                  state->batch_packets, &state->batch_frames[0][0]);
+                  state->batch_packets, STATE_FRAMES(state));
     result->feature_count = ANALYZER_FEATURE_CAPACITY;
     for (feature_index = 0u; feature_index < ANALYZER_FEATURE_CAPACITY;
          ++feature_index)
@@ -1723,12 +1833,30 @@ process_sv_batch (const uint8_t * source, const uint8_t * destination,
         g_have_latest_sv = true;
         return false;
     }
-    if (state->has_time && timestamp_us < state->timestamp_us)
     {
-        ++g_malformed_frames;
-        return false;
+        bool stream_reset = false;
+        if (state->gap_suspect)
+        {
+            state->gap_suspect = false;
+            if (sv_counter_continuous(state, fields))
+            {
+                ++g_streams_kept;
+            }
+            else
+            {
+                reset_sv_stream(state);
+                ++g_streams_reset;
+                stream_reset = true;
+            }
+        }
+        if (state->has_time && timestamp_us < state->timestamp_us)
+        {
+            ++g_malformed_frames;
+            return false;
+        }
+        memset(result, 0, sizeof(*result));
+        result->stream_reset = stream_reset;
     }
-    memset(result, 0, sizeof(*result));
     result->protocol     = ANALYZER_PROTOCOL_SAMPLED_VALUES;
     result->appid        = fields->appid;
     result->timestamp_us = timestamp_us;
@@ -1748,13 +1876,13 @@ process_sv_batch (const uint8_t * source, const uint8_t * destination,
     calculate_sv_features(state, fields, source, timestamp_us, delta_seconds,
                           ratio, &metrics, features);
     update_sv_state(state, source, timestamp_us, delta_seconds);
-    record_batch_packet(state->batch_packets, &state->batch_frames[0][0],
+    record_batch_packet(state->batch_packets, STATE_FRAMES(state),
                         state->batch_count, result, &state->identity);
     predict_batch(&state->batch[0][0], SV_FEATURE_COUNT, &state->batch_count,
                   features, result, &state->previous_label,
                   &state->has_prediction, PICO_ML_BATCH_SV_THRESHOLD,
                   sv_predict, SV_BATCH_FEATURE_COUNT, state->batch_packets,
-                  &state->batch_frames[0][0]);
+                  STATE_FRAMES(state));
     result->feature_count = ANALYZER_FEATURE_CAPACITY;
     for (channel = 0u; channel < ANALYZER_FEATURE_CAPACITY; ++channel)
     {
@@ -1778,6 +1906,28 @@ analyzer_reset (void)
 }
 
 void
+analyzer_note_capture_gap (void)
+{
+    size_t index = 0u;
+
+    ++g_gaps_noted;
+    for (index = 0u; index < MAXIMUM_GOOSE_STREAMS; ++index)
+    {
+        if (g_goose_states[index].used)
+        {
+            g_goose_states[index].gap_suspect = true;
+        }
+    }
+    for (index = 0u; index < ANALYZER_MAXIMUM_SV_STREAMS; ++index)
+    {
+        if (g_sv_states[index].used)
+        {
+            g_sv_states[index].gap_suspect = true;
+        }
+    }
+}
+
+void
 analyzer_get_diagnostics (analyzer_diagnostics_t * diagnostics)
 {
     if (diagnostics != NULL)
@@ -1785,6 +1935,9 @@ analyzer_get_diagnostics (analyzer_diagnostics_t * diagnostics)
         diagnostics->unsupported_streams = g_unsupported_streams;
         diagnostics->unsupported_sv_asdu = g_unsupported_sv_asdu;
         diagnostics->malformed_frames    = g_malformed_frames;
+        diagnostics->gaps_noted          = g_gaps_noted;
+        diagnostics->streams_kept        = g_streams_kept;
+        diagnostics->streams_reset       = g_streams_reset;
     }
 }
 
@@ -1828,6 +1981,7 @@ analyzer_copy_last_batch_frame (size_t index, uint8_t * output, size_t capacity,
     {
         return false;
     }
+#if ANALYZER_STORE_WINDOW_FRAMES
     if (index < PICO_ML_BATCH_STRIDE_FRAMES)
     {
         source = g_last_batch_frames[index];
@@ -1838,6 +1992,12 @@ analyzer_copy_last_batch_frame (size_t index, uint8_t * output, size_t capacity,
             gp_last_batch_tail_frames + (index - PICO_ML_BATCH_STRIDE_FRAMES) *
                                             ANALYZER_MAXIMUM_FRAME_LENGTH;
     }
+#else
+    if (index == ANALYZER_NEWEST_FRAME_INDEX)
+    {
+        source = g_last_newest_frame;
+    }
+#endif
     if (source == NULL)
     {
         return false;
@@ -1847,6 +2007,19 @@ analyzer_copy_last_batch_frame (size_t index, uint8_t * output, size_t capacity,
     {
         *metadata = g_last_batch_packets[index];
     }
+    return true;
+}
+
+bool
+analyzer_copy_last_batch_metadata (size_t                       index,
+                                   analyzer_packet_metadata_t * metadata)
+{
+    if (index >= ANALYZER_BATCH_FRAME_COUNT || metadata == NULL ||
+        g_last_batch_feature_count == 0u)
+    {
+        return false;
+    }
+    *metadata = g_last_batch_packets[index];
     return true;
 }
 
