@@ -22,6 +22,11 @@ target_compile_definitions(pico_rmii_ethernet_analyzer PRIVATE
     PICO_STACK_SIZE=0x1000
     PICO_CORE1_STACK_SIZE=0x1000
     ANALYZER_MAXIMUM_SV_STREAMS=${ANALYZER_MAXIMUM_SV_STREAMS}
+    # Legacy Pico SDK prototype: keep the Week 6 behaviour (4 GOOSE slots,
+    # four raw frames per stream) so incident.c still gets all window frames.
+    # The µT-Kernel SMP build in utk_app/ uses the new defaults instead.
+    ANALYZER_MAXIMUM_GOOSE_STREAMS=4
+    ANALYZER_STORE_WINDOW_FRAMES=1
 )
 set_target_properties(pico_rmii_ethernet_analyzer PROPERTIES
     C_STANDARD 99

@@ -19,10 +19,23 @@
 #define ANALYZER_BATCH_FRAME_COUNT (4u)
 #define ANALYZER_STREAM_ID_CAPACITY (64u)
 #define ANALYZER_MAXIMUM_FRAME_LENGTH (1518u)
-#define ANALYZER_MAXIMUM_GOOSE_STREAMS (4u)
+/* Tribunal 1 (A4): the lab topology has 13 GOOSE control blocks, so keep 16
+ * slots. Each slot now holds features and packet metadata only (about 1 kB),
+ * not four raw frames (about 7 kB). */
+#ifndef ANALYZER_MAXIMUM_GOOSE_STREAMS
+#define ANALYZER_MAXIMUM_GOOSE_STREAMS (16u)
+#endif
 #ifndef ANALYZER_MAXIMUM_SV_STREAMS
 #define ANALYZER_MAXIMUM_SV_STREAMS (1u)
 #endif
+/* 0 (default): keep only the newest raw frame of a scored window as evidence;
+ *   the other three window frames are kept as metadata.
+ * 1: legacy behaviour, every stream keeps its last four raw frames. */
+#ifndef ANALYZER_STORE_WINDOW_FRAMES
+#define ANALYZER_STORE_WINDOW_FRAMES (0)
+#endif
+/* Index of the newest frame inside a four frame window. */
+#define ANALYZER_NEWEST_FRAME_INDEX (ANALYZER_BATCH_FRAME_COUNT - 1u)
 
 typedef enum
 {
@@ -63,6 +76,10 @@ typedef struct
     uint8_t                    secondary_label;
     float                      secondary_probability;
     bool                       label_changed;
+    /* True when this frame's stream was reset because a capture gap
+     * overlapped it and its own counter showed lost frames (FR8). The
+     * Incident Manager must drop this stream's previous vote. */
+    bool                       stream_reset;
     uint8_t                    batch_frame_count;
     analyzer_packet_metadata_t batch_packets[ANALYZER_BATCH_FRAME_COUNT];
     uint8_t                    feature_count;
@@ -87,10 +104,22 @@ typedef struct
     uint32_t unsupported_streams;
     uint32_t unsupported_sv_asdu;
     uint32_t malformed_frames;
+    uint32_t gaps_noted;      /* capture gaps reported by the caller */
+    uint32_t streams_kept;    /* gap suspect streams whose counter was fine */
+    uint32_t streams_reset;   /* gap suspect streams that really lost frames */
 } analyzer_diagnostics_t;
 
-/* Clear per-stream feature history after a capture sequence gap. */
+/* Clear every stream. Use at start up only. */
 void analyzer_reset (void);
+/*
+ * Tell the analyzer that the capture sequence number jumped (frames were
+ * dropped before analysis). Every active stream becomes "gap suspect". On its
+ * next frame each stream checks its own counter (GOOSE stNum/sqNum, SV
+ * smpCnt): if it is continuous the window is kept, otherwise only that
+ * stream is reset and result->stream_reset is set. Replaces the old global
+ * analyzer_reset() on every gap, which let one burst blind every stream.
+ */
+void analyzer_note_capture_gap (void);
 /* Return true for a parsed GOOSE or SV frame, including batch warm-up frames.
  */
 bool analyzer_process_ethernet_frame (const uint8_t * frame, size_t length,
@@ -106,11 +135,18 @@ bool analyzer_process_ethernet_replay (const uint8_t * frame, size_t length,
 /*
  * Copy one full packet from the latest completed batch. Call immediately
  * after prediction_ready and before any later analyzer processing call or
- * analyzer_reset(); the latest-batch snapshot is single-core shared state.
+ * analyzer_reset(). The snapshot belongs to the Stream Analysis task: only
+ * that task may call the analyzer, so no lock is needed.
+ * With ANALYZER_STORE_WINDOW_FRAMES == 0 only ANALYZER_NEWEST_FRAME_INDEX
+ * has bytes; the other indexes return false (use the metadata call below).
  */
 bool analyzer_copy_last_batch_frame (size_t index, uint8_t * output,
                                      size_t                       capacity,
                                      analyzer_packet_metadata_t * metadata);
+/* Metadata (time, counters, MACs, stream id) of any frame of the latest
+ * completed batch. Always available for all four indexes. */
+bool analyzer_copy_last_batch_metadata (size_t                       index,
+                                        analyzer_packet_metadata_t * metadata);
 void analyzer_get_diagnostics (analyzer_diagnostics_t * diagnostics);
 bool analyzer_copy_last_batch_features (float * output, size_t capacity,
                                         size_t *              count,
