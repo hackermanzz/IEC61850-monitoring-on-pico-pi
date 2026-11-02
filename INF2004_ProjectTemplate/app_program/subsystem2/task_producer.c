@@ -67,7 +67,7 @@ static uint64_t last_start_attempt;
 static void capture_irq(UINT intno)
 {
     (void)intno;
-    if (rmii_hw_isr()) (void)tk_wup_tsk(capture_task_id);
+    if (rmii_capture_hw_isr()) (void)tk_wup_tsk(capture_task_id);
 }
 
 static bool is_iec(const uint8_t *data, size_t length)
@@ -83,11 +83,11 @@ static bool is_iec(const uint8_t *data, size_t length)
     return false;
 }
 
-static void handle_capture(const rmii_hw_capture_t *capture)
+static void handle_capture(const rmii_capture_hw_capture_t *capture)
 {
     capture_frame_t *frame;
     uint64_t start = monitor_time_us();
-    size_t decoded = rmii_frame_decode_samples(capture->samples,
+    size_t decoded = rmii_frame_decode_samples(capture->p_samples,
                          capture->word_count, scratch, sizeof(scratch));
     stats.sample_words_last = (uint16_t)capture->word_count;
     stats.decoded_bytes_last = (uint16_t)decoded;
@@ -118,17 +118,17 @@ static void service_capture_status(void)
     /* Separate deadlines: status publication must not indefinitely postpone
      * link polling while the ready-buffer loop remains busy. */
     if (now - last_link_poll >= 100000) {
-        stats.link_up = rmii_hw_link_up();
+        stats.link_up = rmii_capture_hw_is_link_up();
         last_link_poll = monitor_time_us();
     }
     if (now - last_phy_diag >= 2000000) {
-        rmii_hw_phy_diagnostics(&stats.phy);
+        rmii_capture_hw_read_phy_diag(&stats.phy);
         last_phy_diag = monitor_time_us();
     }
     if (now - last_report >= 100000) {
-        stats.isr_count = rmii_hw_isr_count();
-        stats.rx_overrun = rmii_hw_overrun_count();
-        stats.dma_full = rmii_hw_dma_full_count();
+        stats.isr_count = rmii_capture_hw_isr_count();
+        stats.rx_overrun = rmii_capture_hw_overrun_count();
+        stats.dma_full = rmii_capture_hw_dma_full_count();
         publish_status();
     }
 }
@@ -140,7 +140,7 @@ static void start_capture_hardware(void)
     bool recovering = stats.fault != 0;
     stats.start_attempts++;
     if (!MONITOR_PINS_CONFIGURED) stats.fault = 3;
-    else if (!rmii_hw_phy_init(&phy)) {
+    else if (!rmii_capture_hw_phy_init(&phy)) {
         stats.phy_found = 0;
         stats.link_up = 0;
         stats.fault = 1;
@@ -149,12 +149,12 @@ static void start_capture_hardware(void)
         stats.phy_address = phy;
         dint.intatr = TA_HLNG;
         dint.inthdr = (FP)capture_irq;
-        ER er = tk_def_int(rmii_hw_irq_number(), &dint);
-        if (er != E_OK || !rmii_hw_rx_start()) stats.fault = 2;
+        ER er = tk_def_int(rmii_capture_hw_irq_number(), &dint);
+        if (er != E_OK || !rmii_capture_hw_rx_start()) stats.fault = 2;
         else {
             stats.fault = 0;
             if (recovering) stats.recoveries++;
-            EnableInt(rmii_hw_irq_number(), 1);
+            EnableInt(rmii_capture_hw_irq_number(), 1);
         }
     }
     last_start_attempt = monitor_time_us();
@@ -182,7 +182,7 @@ EXPORT void producer_task(INT stacd, void *exinf)
         tk_dly_tsk(S2_PERIOD_MS);
     }
 #else
-    rmii_hw_capture_t capture;
+    rmii_capture_hw_capture_t capture;
     capture_task_id = tk_get_tid();
     start_capture_hardware();
     for (;;) {
@@ -193,9 +193,9 @@ EXPORT void producer_task(INT stacd, void *exinf)
             monitor_time_us() - last_start_attempt >= MONITOR_CAPTURE_RETRY_US)
             start_capture_hardware();
         if (!stats.fault) {
-            while (rmii_hw_next_capture(&capture)) {
+            while (rmii_capture_hw_next_capture(&capture)) {
                 handle_capture(&capture);
-                rmii_hw_release_capture(capture.buffer);
+                rmii_capture_hw_release(capture.buffer);
                 service_capture_status();
             }
             service_capture_status();
