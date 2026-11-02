@@ -20,6 +20,7 @@
 #include "wait.h"
 #include "check.h"
 #include <tm/tmonitor.h>
+#include <sys/stack_diag.h>
 
 #include "../sysdepend/cpu_task.h"
 
@@ -69,6 +70,11 @@ SYSCALL ID tk_cre_tsk( CONST T_CTSK *pk_ctsk )
 		if ( stack == NULL ) {
 			return E_NOMEM;
 		}
+#if USE_TASK_STACK_DIAG
+		/* Only fresh kernel-owned stacks, before any context is built or the
+		 * new task can execute. User-supplied stack contents are untouched. */
+		tk_stack_paint(stack, sstksz);
+#endif
 #endif
 	}
 

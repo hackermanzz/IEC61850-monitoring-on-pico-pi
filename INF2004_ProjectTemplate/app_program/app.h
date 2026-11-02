@@ -9,6 +9,10 @@
 #ifndef APP_H
 #define APP_H
 
+#define PROHIBIT_DEF_SIZE_T 1
+#include <stddef.h>
+#include "monitor_config.h"
+
 #include <tk/tkernel.h>		/* micro T-Kernel API (tk_xxx_yyy) */
 #include <tm/tmonitor.h>	/* T-Monitor API: tm_printf() console output */
 #include <bsp/libbsp.h>		/* Board helpers: gpio_set_pin/val, pwm_... */
@@ -17,19 +21,20 @@
  *  Pins: free for projects are GP0..GP22 and GP26..GP28.  GP0/GP1 are
  *  taken by UART0 when built with "make CRASH_REPORT=1" (see README).
  *  Never use GP23/24/25/29: they are wired to the Pico W radio.
- *  Claim every pin in TEAM.md section 2 before using it.
+ *  Review the pin map in README.md before using it.
  * --------------------------------------------------------------------- */
 
 /* ---------------------------------------------------------------------
  *  Task priorities: 1 is the highest; the kernel's USB console (3) and
  *  WiFi (4) tasks sit above every application task.  Each subsystem
- *  has its own band (TEAM.md section 4), defined in its own header.
+ *  has its own band (README.md), defined in its own header.
  * --------------------------------------------------------------------- */
 #define TASK_STACK_SIZE		2048	/* bytes; tm_printf needs ~1 KB */
 
 /* Create and start a task.  prc = TP_PRC1 (core 0), TP_PRC2 (core 1), or
    0 for "any core".  Defined in app_main.c. */
 IMPORT ID app_start_task(FP entry, PRI pri, UW prc, const char *name);
+IMPORT ID app_start_task_ex(FP entry, PRI pri, UW prc, SZ stack_size);
 
 /* ---------------------------------------------------------------------
  *  Every subsystem provides these.  usermain() calls ALL the _init()
@@ -53,7 +58,6 @@ IMPORT ER subsystem5_start(void);
 
 #if APP_TEST
 IMPORT void subsystem1_test(void);
-IMPORT void subsystem2_test(void);
 IMPORT void subsystem3_test(void);
 IMPORT void subsystem4_test(void);
 IMPORT void subsystem5_test(void);

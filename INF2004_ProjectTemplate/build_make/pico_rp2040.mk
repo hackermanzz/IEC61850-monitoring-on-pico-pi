@@ -35,7 +35,7 @@ CONSOLE ?= usb_cdc
 # Pico W radio.  Defaults to cyw43: the radio is powered up and owned by a
 # core-0 polling service task, using the Pico SDK's cyw43 driver.  WIFI=none
 # leaves the radio powered down.
-WIFI ?= cyw43
+WIFI ?= none
 ifneq ($(filter $(WIFI),none cyw43),$(WIFI))
 $(error Unknown WIFI '$(WIFI)'; use none or cyw43)
 endif
@@ -84,6 +84,30 @@ endif
 # TEST=1 builds the subsystem self-tests into the image (APP_TEST=1 in C).
 # The image gets a _test suffix so it cannot be mistaken for the normal one.
 TEST ?= 0
+# Integrator foundation: no application subsystem has been integrated yet.
+INTEGRATION_STAGE ?= foundation
+CAPTURE ?= disabled
+STORAGE ?= 0
+TELEGRAM ?= 0
+WATCHDOG ?= 0
+PINS_CONFIGURED ?= 0
+STACK_DIAG ?= 0
+ifneq ($(INTEGRATION_STAGE),foundation)
+$(error Only INTEGRATION_STAGE=foundation exists in this checkpoint)
+endif
+ifneq ($(CAPTURE),disabled)
+$(error Capture is not integrated in the foundation checkpoint)
+endif
+ifneq ($(NET),none)
+$(error Network clients are not integrated in the foundation checkpoint)
+endif
+ifneq ($(STORAGE)$(TELEGRAM)$(WATCHDOG)$(PINS_CONFIGURED),0000)
+$(error Foundation requires STORAGE=0 TELEGRAM=0 WATCHDOG=0 PINS_CONFIGURED=0)
+endif
+ifneq ($(filter $(STACK_DIAG),0 1),$(STACK_DIAG))
+$(error STACK_DIAG must be 0 or 1)
+endif
+
 ifneq ($(filter $(TEST),0 1),$(TEST))
 $(error Unknown TEST '$(TEST)'; use 0 or 1)
 endif
@@ -117,6 +141,8 @@ endif
 # only the banner in the log revealed it.
 #
 EXE_FILE := mtk3pico_smp$(SMP)_$(CONSOLE)$(WIFI_SUFFIX)$(NET_SUFFIX)$(MQTT_SUFFIX)$(CRASH_SUFFIX)$(TEST_SUFFIX)
+
+EXE_FILE := $(EXE_FILE)_foundation_stk$(STACK_DIAG)
 
 GCC := arm-none-eabi-gcc
 AS := arm-none-eabi-gcc
@@ -168,6 +194,10 @@ LFLAGS := -mcpu=cortex-m0plus -mthumb -ffreestanding \
     -O2 -g3 \
     -mfloat-abi=soft \
 
+# Collect unused sample-driver sections in every profile, including WIFI=none.
+CFLAGS += -ffunction-sections -fdata-sections
+LFLAGS += -Wl,--gc-sections
+
 LNKFILE := "../etc/linker/pico_rp2040/tkernel_map.ld"
 
 # Applied here, after CFLAGS/ASFLAGS are assigned with ':=', which would
@@ -210,6 +240,8 @@ endif
 ################################################################################
 
 PROFILE_ID := smp$(SMP)-$(CONSOLE)-wifi$(WIFI)-net$(NET)-mqtt$(MQTT)-crash$(CRASH_REPORT)-test$(TEST)
+CFLAGS += -DUSE_TASK_STACK_DIAG=$(STACK_DIAG) -DMONITOR_WATCHDOG=0
+PROFILE_ID := $(PROFILE_ID)-foundation-stk$(STACK_DIAG)-sdk$(PICO_SDK_PATH)-rules$(shell cksum makefile pico_rp2040.mk mtkernel_3/app_program/subdir.mk | cksum | cut -d' ' -f1)
 PROFILE_FILE := .build_profile
 
 ifneq ($(strip $(shell cat $(PROFILE_FILE) 2>/dev/null)),$(PROFILE_ID))

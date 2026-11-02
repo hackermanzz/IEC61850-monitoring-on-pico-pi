@@ -130,6 +130,29 @@ IMPORT void *Kcalloc( size_t nmemb, size_t size );
 IMPORT void *Krealloc( void *ptr, size_t size);
 IMPORT void Kfree( void *ptr );
 
+/* Monitor extension: live/peak kernel heap spans include allocator rounding
+ * and each allocated block's header. Stacks and pools allocated through
+ * Kmalloc are included. Free-space fragmentation is not a live allocation. */
+typedef struct {
+	UW allocated_bytes;
+	UW peak_allocated_bytes;
+	UW allocation_failures;
+	UW live_blocks;
+} T_KHEAP;
+IMPORT void Kheap_stats( T_KHEAP *info );
+
+/* Monitor extension, STACK_DIAG=1 only: inspect the calling task's painted
+ * stack. Never scans a remote task. Written bytes are a lower bound, since a
+ * write equal to the paint byte is invisible. Does not resize/protect stacks. */
+typedef struct {
+	ID task_id;
+	UW total_bytes;
+	UW paint_prefix;
+	UW written_lower;
+	BOOL bottom_touched;
+} T_KSTACK;
+IMPORT ER Kstack_stats( T_KSTACK *info );
+
 #endif /* TK_SUPPORT_MEMLIB */
 
 

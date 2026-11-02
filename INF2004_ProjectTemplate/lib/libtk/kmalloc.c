@@ -30,6 +30,8 @@ IMPORT void* knl_Imalloc( SZ size );
 IMPORT void* knl_Icalloc( SZ nmemb, SZ size );
 IMPORT void* knl_Irealloc( void *ptr, SZ size );
 IMPORT void  knl_Ifree( void *ptr );
+IMPORT void  knl_Imalloc_stats( T_KHEAP *info );
+IMPORT ER knl_own_stack_stats( T_KSTACK *info );
 
 
 /* --------------------------------------------------------------------- */
@@ -54,6 +56,16 @@ EXPORT void *Krealloc( void *ptr, size_t size)
 EXPORT void Kfree( void *ptr )
 {
 	knl_Ifree(ptr);
+}
+
+EXPORT void Kheap_stats( T_KHEAP *info )
+{
+	knl_Imalloc_stats(info);
+}
+
+EXPORT ER Kstack_stats( T_KSTACK *info )
+{
+	return knl_own_stack_stats(info);
 }
 
 #endif /* TK_SUPPORT_MEMLIB */

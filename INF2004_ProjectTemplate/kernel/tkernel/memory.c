@@ -18,6 +18,7 @@
 
 #include "kernel.h"
 #include "memory.h"
+#include <sys/stack_diag.h>
 
 /*
  * FreeQue search
@@ -151,6 +152,68 @@ EXPORT void knl_removeAreaQue( QUEUE *aq )
 /* ------------------------------------------------------------------------ */
 
 Noinit(EXPORT IMACB *knl_imacb);
+LOCAL T_KHEAP heap_stats;
+
+EXPORT ER knl_own_stack_stats(T_KSTACK *info)
+{
+#if USE_TASK_STACK_DIAG && defined(PICO_RP2040)
+	UINT saved;
+	TCB *self;
+	volatile UB *base;
+	SZ total;
+	ID id;
+	if (!info) return E_PAR;
+	if (knl_get_ipsr() != 0) return E_CTX;
+	DI(saved);
+	self = knl_ctxtsk;
+	/* The caller must allow interrupts during the potentially long scan. */
+	if (isDI(saved) || !self || self->tskid <= 0 || self->sstksz <= 0 || !self->isstack) {
+		EI(saved);
+		return E_CTX;
+	}
+	if (self->tskatr & TA_USERBUF) {
+		EI(saved);
+		return E_NOSPT;
+	}
+	total = self->sstksz;
+	base = (volatile UB *)self->isstack - total;
+	id = self->tskid;
+	EI(saved);
+	/* This task owns its allocation throughout the scan. A local interrupt
+	 * can lower the watermark during the scan; a later probe will see it.
+	 * No kernel/global lock or interrupt mask is held across this walk. */
+	SZ prefix = tk_stack_paint_prefix(base, total);
+	info->task_id = id;
+	info->total_bytes = (UW)total;
+	info->paint_prefix = (UW)prefix;
+	info->written_lower = (UW)(total - prefix);
+	info->bottom_touched = prefix < 32;
+	return E_OK;
+#else
+	(void)info;
+	return E_NOSPT;
+#endif
+}
+
+/* Same exclusion as the allocator. Current monitor heap writers and this
+ * diagnostic reader all execute on physical core 0; this does not add global
+ * SMP heap serialization for future callers on another core. */
+EXPORT void knl_Imalloc_stats( T_KHEAP *info )
+{
+	UINT imask;
+	if (info == NULL) return;
+	DI(imask);
+	*info = heap_stats;
+	EI(imask);
+}
+
+LOCAL void allocation_failed( void )
+{
+	UINT imask;
+	DI(imask);
+	++heap_stats.allocation_failures;
+	EI(imask);
+}
 
 /* ------------------------------------------------------------------------ */
 
@@ -164,7 +227,8 @@ EXPORT void* knl_Imalloc( SZ size )
 
 	/* If it is smaller than the minimum fragment size,
 	   allocate the minimum size to it. */
-	if( size <= 0 ) {
+	if( size <= 0 || (UW)size > MAX_ALLOCATE ) {
+		allocation_failed();
 		return (void *)NULL;
 	} else 	if ( size < MIN_FRAGMENT ) {
 		size = MIN_FRAGMENT;
@@ -177,6 +241,7 @@ EXPORT void* knl_Imalloc( SZ size )
 	/* Search FreeQue */
 	q = knl_searchFreeArea(knl_imacb, size);
 	if ( q == &(knl_imacb->freeque) ) {
+		++heap_stats.allocation_failures;
 		q = NULL; /* Insufficient memory */
 		goto err_ret;
 	}
@@ -198,6 +263,12 @@ EXPORT void* knl_Imalloc( SZ size )
 		knl_appendFreeArea(knl_imacb, aq2);
 	}
 	setAreaFlag(aq, AREA_USE);
+	/* Count the actual span, including an unsplittable tail and header,
+	 * rather than only the caller's requested byte count. */
+	heap_stats.allocated_bytes += (UW)AreaSize(aq) + sizeof(QUEUE);
+	++heap_stats.live_blocks;
+	if (heap_stats.allocated_bytes > heap_stats.peak_allocated_bytes)
+		heap_stats.peak_allocated_bytes = heap_stats.allocated_bytes;
 
 err_ret:
 	EI(imask);
@@ -210,8 +281,15 @@ err_ret:
  */
 EXPORT void* knl_Icalloc( SZ nmemb, SZ size )
 {
-	SZ	sz = nmemb * size;
+	SZ	sz;
 	void	*mem;
+	/* Check before multiplying signed SZ: a wrapped count must never return
+	 * a small allocation to a caller expecting a much larger array. */
+	if (nmemb <= 0 || size <= 0 || (UW)nmemb > MAX_ALLOCATE / (UW)size) {
+		allocation_failed();
+		return NULL;
+	}
+	sz = nmemb * size;
 
 	mem = knl_Imalloc(sz);
 	if ( mem == NULL ) {
@@ -262,10 +340,13 @@ EXPORT void  knl_Ifree( void *ptr )
 {
 	QUEUE	*aq;
 	UINT	imask;
+	if (ptr == NULL) return;
 
 	DI(imask);  /* Exclusive control by interrupt disable */
 
 	aq = (QUEUE*)ptr - 1;
+	heap_stats.allocated_bytes -= (UW)AreaSize(aq) + sizeof(QUEUE);
+	--heap_stats.live_blocks;
 	clrAreaFlag(aq, AREA_USE);
 
 	if ( !chkAreaFlag(aq->next, AREA_USE) ) {
@@ -304,6 +385,7 @@ LOCAL void initIMACB( void )
 EXPORT ER knl_init_Imalloc( void )
 {
 	QUEUE	*top, *end;
+	knl_memset(&heap_stats, 0, sizeof(heap_stats));
 
 	/* Align top with 4 byte unit alignment for IMACB */
 	knl_lowmem_top = (void *)(((UW)knl_lowmem_top + 3) & ~0x00000003UL);

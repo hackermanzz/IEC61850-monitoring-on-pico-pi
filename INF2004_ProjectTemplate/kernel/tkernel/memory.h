@@ -99,5 +99,7 @@ IMPORT void knl_insertAreaQue( QUEUE *que, QUEUE *ent );
 IMPORT void knl_removeAreaQue( QUEUE *aq );
 
 IMPORT IMACB *knl_imacb;
+IMPORT void knl_Imalloc_stats( T_KHEAP *info );
+IMPORT ER knl_own_stack_stats( T_KSTACK *info );
 
 #endif /* _MEMORY_H_ */

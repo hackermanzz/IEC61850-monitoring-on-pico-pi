@@ -1,17 +1,15 @@
-/*
- *	subsystem5.h
- *	Subsystem 5 -- <name>.  Student ID: <student ID>.
- *
- *	EMPTY TEMPLATE.  Subsystems 1-4 show a complete example; copy their
- *	pattern.  Put here only what OTHER subsystems may use (object IDs,
- *	message formats, priorities); keep everything else LOCAL in the .c.
- */
-
 #ifndef SUBSYSTEM5_H
 #define SUBSYSTEM5_H
-
+#define S5_NOTICE_QUEUE_DEPTH 8u
 #include "../app.h"
-
-#define S5_PRI_MAIN	20		/* priority band 20-21 (TEAM.md) */
-
-#endif /* SUBSYSTEM5_H */
+#include "../subsystem4/incident_store.h"
+IMPORT ID mbf_notifications, tid_led, flg_alarm;
+IMPORT ER subsystem5_alarm(void);
+IMPORT void led_task(INT stacd, void *exinf);
+#if !MONITOR_TELEGRAM
+/* Called only by the low-priority S1 storage owner or S5 console task. */
+IMPORT void subsystem5_console_poll(INT timeout);
+#endif
+IMPORT ER subsystem5_notify(const analyzer_result_t *result,
+                               const monitor_incident_outcome_t *outcome);
+#endif

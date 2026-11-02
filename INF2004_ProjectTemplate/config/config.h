@@ -40,17 +40,20 @@
 
 #define CNF_TIMER_PERIOD	10	/* System timer period */
 
-/* Maximum number of kernel objects (raised for a 5-subsystem team project) */
-#define CNF_MAX_TSKID		32	/* Task */
-#define CNF_MAX_SEMID		16	/* Semaphore */
-#define CNF_MAX_FLGID		16	/* Event flag */
-#define CNF_MAX_MBXID		12	/* Mailbox*/
-#define CNF_MAX_MTXID		12	/* Mutex */
-#define CNF_MAX_MBFID		12	/* Message buffer */
-#define CNF_MAX_MPLID		12	/* Memory pool */
-#define CNF_MAX_MPFID		12	/* Fixed size memory pool */
-#define CNF_MAX_CYCID		12	/* Cyclic handler */
-#define CNF_MAX_ALMID		12	/* Alarm handler */
+/* Monitor inventory: at most 8 tasks (init, USB, radio, five application
+ * owners), 1 semaphore, 1 flag, 1 mailbox, 1 mutex, up to 4 message buffers and
+ * 1 fixed pool. Leave headroom without reserving the old demo's 32 TCBs.
+ * The raw kernel device API and sample drivers are disabled below. */
+#define CNF_MAX_TSKID		12	/* Task */
+#define CNF_MAX_SEMID		4	/* Semaphore */
+#define CNF_MAX_FLGID		4	/* Event flag */
+#define CNF_MAX_MBXID		2	/* Mailbox */
+#define CNF_MAX_MTXID		2	/* Mutex */
+#define CNF_MAX_MBFID		4	/* Message buffer */
+#define CNF_MAX_MPLID		2	/* Memory pool */
+#define CNF_MAX_MPFID		2	/* Fixed size memory pool */
+#define CNF_MAX_CYCID		2	/* Cyclic handler */
+#define CNF_MAX_ALMID		2	/* Alarm handler */
 
 /* Device configuration */
 #define CNF_MAX_REGDEV		(8)	/* Max registered device */
@@ -107,6 +110,11 @@
 #define USE_IMALLOC		(1)	/* Use dynamic memory allocation */
 #define USE_SHUTDOWN		(1)	/* Use System shutdown */
 #define USE_STATIC_IVT		(0)	/* Use static interrupt vector table */
+
+/* Optional measurement build. Normal firmware has no stack-probe overhead. */
+#ifndef USE_TASK_STACK_DIAG
+#define USE_TASK_STACK_DIAG (0)
+#endif
 
 
 /*---------------------------------------------------------------------- */
@@ -168,7 +176,7 @@
 /* Use Sample device driver.
  *  1: Valid  0: Invalid
  */
-#define USE_SDEV_DRV		(1)	/* Use Sample device driver */
+#define USE_SDEV_DRV		(0)	/* Monitor uses direct owned drivers */
 
 /*---------------------------------------------------------------------- */
 /*

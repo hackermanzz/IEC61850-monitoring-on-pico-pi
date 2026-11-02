@@ -15,7 +15,12 @@
 #include "lwip/init.h"
 #include "lwip/timeouts.h"
 #include "lwip/netif.h"
+#if __has_include("wifi_secrets.h")
 #include "wifi_secrets.h"
+#else
+#define WIFI_SSID ""
+#define WIFI_PASSWORD ""
+#endif
 #if TM_MQTT
 #include "mqtt_utk.h"
 #endif
@@ -172,6 +177,9 @@ static int32_t wifi_try_join(void)
 {
     int32_t err;
 
+    /* Keep the service/status hook alive when credentials are placeholders. */
+    if (WIFI_SSID[0] == '\0') return 0;
+
     tm_printf((UB*)"wifi: joining \"%s\" ...\n", WIFI_SSID);
 
     err = cyw43_wifi_join(&cyw43_state,
@@ -200,6 +208,9 @@ static int scan_result(void *env, const cyw43_ev_scan_result_t *result)
 }
 #endif
 
+#if USE_TASK_STACK_DIAG
+extern void monitor_stack_report(unsigned owner) __attribute__((weak));
+#endif
 void cyw43_utk_task(int32_t stacd, void *exinf)
 {
 #if !TM_NET_LWIP
@@ -270,7 +281,12 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
      * waking a failed high-rate service must not interfere with USB or the
      * rest of the kernel qualification. */
     if(result != 0) {
-        for(;;) (void)tk_dly_tsk(1000);
+        for(;;) {
+#if USE_TASK_STACK_DIAG
+            if (monitor_stack_report) monitor_stack_report(7u);
+#endif
+            (void)tk_dly_tsk(1000);
+        }
     }
 
 #if TM_NET_LWIP
@@ -303,13 +319,14 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
             /* Negative == the association attempt is over and lost. Arm a
              * retry; a positive-but-not-UP status (JOIN/NOIP) is still making
              * progress, so leave it alone and let DHCP finish. */
-            rejoin_at = (radio_status.link_status < 0)?
+            rejoin_at = (WIFI_SSID[0] != '\0' &&
+                         radio_status.link_status <= CYW43_LINK_DOWN)?
                         time_us_64() + WIFI_REJOIN_DELAY_US: 0;
         }
 
         if(rejoin_at != 0 && time_us_64() >= rejoin_at) {
             rejoin_at = 0;
-            if(radio_status.link_status < 0) {
+            if(radio_status.link_status <= CYW43_LINK_DOWN) {
                 (void)wifi_try_join();
                 /* Force the next iteration to treat whatever comes back as a
                  * change, so the new outcome is always reported. Must be a
@@ -331,6 +348,9 @@ void cyw43_utk_task(int32_t stacd, void *exinf)
 #endif
         cyw43_utk_poll_requested = 0;
         cyw43_thread_exit();
+#if USE_TASK_STACK_DIAG
+        if (monitor_stack_report) monitor_stack_report(7u);
+#endif
 #if TM_NET_LWIP
         sys_check_timeouts();
 #if TM_MQTT

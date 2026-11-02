@@ -13,6 +13,9 @@
 #include <tk/tkernel.h>
 #include <tk/typedef.h>
 #include <sys/sysdef.h>
+#if USE_TASK_STACK_DIAG
+extern void monitor_stack_report(unsigned owner) __attribute__((weak));
+#endif
 
 #if TK_SUPPORT_SMP
 #include <tk/smp.h>
@@ -153,6 +156,9 @@ LOCAL void usb_service_task(INT stacd, void *exinf)
 
 	tm_usb_init_ok = tm_tusb_init() ? 1 : 0;
 	if(!tm_usb_init_ok) {
+#if USE_TASK_STACK_DIAG
+		if (monitor_stack_report) monitor_stack_report(6u);
+#endif
 		tm_usb_service_tskid = 0;
 		tk_ext_tsk();
 		return;
@@ -199,6 +205,9 @@ LOCAL void usb_service_task(INT stacd, void *exinf)
 
 		/* Sleep until the controller interrupts, with a periodic
 		   fallback so the ring still drains when the link is idle. */
+#if USE_TASK_STACK_DIAG
+		if (monitor_stack_report) monitor_stack_report(6u);
+#endif
 		tk_slp_tsk(USB_POLL_MS);
 	}
 }

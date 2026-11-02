@@ -133,3 +133,20 @@ config/wifi_secrets.h
 
 # macOS
 .DS_Store
+/INF2004_ProjectTemplate/config/telegram_secrets.h
+/INF2004_ProjectTemplate/config/wifi_secrets.h
+!/INF2004_ProjectTemplate/testing/host/real_packet_fixtures.json
+!/INF2004_ProjectTemplate/app_program/subsystem3/batch_model_manifest.json
+*.markdown
+
+**/build_make/.build_profile
+
+/subsystem_exports/
+
+**/testing/build_logs/
+
+**/testing/qualification/*
+
+!**/testing/qualification/.gitkeep
+
+__pycache__/
