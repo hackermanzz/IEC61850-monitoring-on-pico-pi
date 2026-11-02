@@ -1,0 +1,46 @@
+# BARR-C:2018 formatting for this project (clang-format 16 or newer).
+# Only the layout rules that a formatter can apply are listed here; the
+# remaining rules are checked by tools/barr_check.py and by code review.
+# See docs/coding_standard.md.
+Language: Cpp
+BasedOnStyle: LLVM
+
+ColumnLimit: 80                         # 1.2.a  line width
+BreakBeforeBraces: Allman               # 1.3.b  braces on their own lines
+InsertBraces: true                      # 1.3.a  braces around every block
+IndentWidth: 4                          # 3.4.a  4-space indentation
+ContinuationIndentWidth: 4              # 3.4.c
+UseTab: Never                           # 3.5.a  no tab characters
+TabWidth: 4
+IndentCaseLabels: true                  # 3.4.b  case contents indented once
+LineEnding: LF                          # 3.6.a  LF line endings
+InsertNewlineAtEOF: true                # 3.3.c  newline after the last line
+
+# 3.1  spaces
+SpaceBeforeParens: Custom
+SpaceBeforeParensOptions:
+  AfterControlStatements: true          # 3.1.a  "if (", "while ("
+  AfterFunctionDefinitionName: true     # 3.1.j  "name (" at the definition
+  AfterFunctionDeclarationName: false   # 3.1.j  "name(" elsewhere
+SpacesInParens: Never                   # 3.1.i
+SpaceAfterCStyleCast: true
+PointerAlignment: Middle                # 3.1.e  "uint8_t * p_data"
+
+# 3.2  alignment
+AlignConsecutiveDeclarations: true      # 3.2.a/b
+AlignConsecutiveAssignments: true       # 3.2.c
+AlignConsecutiveMacros: true
+AlignTrailingComments: true
+
+# 3.3.a  one statement per line
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+AllowShortCaseLabelsOnASingleLine: false
+AllowShortFunctionsOnASingleLine: None
+
+BreakAfterReturnType: AllDefinitions    # return type on its own line
+BreakBeforeBinaryOperators: NonAssignment
+AlignOperands: AlignAfterOperator
+MaxEmptyLinesToKeep: 1
+SortIncludes: Never
