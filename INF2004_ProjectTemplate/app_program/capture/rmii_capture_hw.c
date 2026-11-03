@@ -20,15 +20,21 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// NOTE: Pico SDK 2.x pio.h leaves a parameter unused when parameter checks
+// are off, which -Werror in the template build would turn into an error.
+// The warning is silenced for the SDK headers only.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/pio.h"
 #include "hardware/structs/io_bank0.h"
 #include "hardware/structs/timer.h"
 #include "hardware/sync.h"
+#include "rmii_ethernet_phy_rx.pio.h"
+#pragma GCC diagnostic pop
 
 #include "rmii_capture_hw.h"
-#include "rmii_ethernet_phy_rx.pio.h"
 
 // Receive buffers: 62400 samples at 50 MS/s (125 MHz / 2.5) cover 1.25 ms,
 // enough for a maximum size frame at 10 Mbps. 16 samples per 32-bit word.
