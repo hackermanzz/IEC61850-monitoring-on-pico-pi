@@ -25,7 +25,8 @@ static ID gh_frame_slots = 0;
 static ID gh_frame_pool  = 0;
 
 /*!
- * @brief Create the frame semaphore and the fixed-size frame pool.
+ * @brief Create the frame semaphore, the fixed-size frame pool and the
+ *        statistics lock.
  *
  * @return E_OK, or the kernel error code.
  */
@@ -55,6 +56,10 @@ capture_init (void)
         if (gh_frame_pool < E_OK)
         {
             result = gh_frame_pool;
+        }
+        else
+        {
+            result = task_producer_init();
         }
     }
 

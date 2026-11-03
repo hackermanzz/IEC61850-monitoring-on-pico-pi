@@ -43,13 +43,6 @@
 #define SYNTHETIC_PERIOD_MS   (300)
 #define CRS_DV_IRQ_PRIORITY   (1)
 
-// Capture fault codes reported in monitor_capture_stats_t.fault.
-//
-#define CAPTURE_FAULT_NONE    (0u)
-#define CAPTURE_FAULT_NO_PHY  (1u)
-#define CAPTURE_FAULT_START   (2u)
-#define CAPTURE_FAULT_NO_PINS (3u)
-
 // Ethernet framing used to recognize IEC 61850 GOOSE and SV frames.
 //
 #define ETHERNET_HEADER_BYTES (14u)
@@ -65,8 +58,13 @@
 #define ETHERTYPE_QINQ_LEGACY (0x9100u)
 
 static monitor_capture_stats_t g_stats           = {0};
+static monitor_capture_stats_t g_published_stats = {0};
 static uint32_t                g_sequence_number = 0u;
 static uint64_t                g_last_report_us  = 0u;
+
+// Guards g_published_stats; created once by task_producer_init().
+//
+static ID gh_stats_lock = 0;
 
 #if !MONITOR_SYNTHETIC
 static uint8_t  g_scratch[CAPTURE_FRAME_CAPACITY + RMII_FRAME_FCS_BYTES];
@@ -103,6 +101,28 @@ static void     crs_dv_isr(UINT interrupt_number);
 #endif
 
 /*!
+ * @brief Create the statistics lock.
+ *
+ * @return E_OK, or the kernel error code.
+ */
+ER
+task_producer_init (void)
+{
+    T_CMTX lock   = {0};
+    ER     result = E_OK;
+
+    lock.mtxatr   = TA_INHERIT;
+    gh_stats_lock = tk_cre_mtx(&lock);
+
+    if (gh_stats_lock < E_OK)
+    {
+        result = gh_stats_lock;
+    }
+
+    return (result);
+}
+
+/*!
  * @brief Create and start the capture producer task.
  *
  * @return The task ID, or a negative kernel error code.
@@ -112,6 +132,32 @@ task_producer_start (void)
 {
     return (app_start_task_ex(producer_task, MONITOR_CAPTURE_PRIORITY, TP_PRC2,
                               MONITOR_CAPTURE_STACK));
+}
+
+/*!
+ * @brief Copy the statistics the task last published.
+ *
+ * @param[out] p_stats Receives the statistics.
+ *
+ * @return E_OK, or the kernel error code.
+ */
+ER
+task_producer_read_stats (monitor_capture_stats_t * p_stats)
+{
+    ER result = E_PAR;
+
+    if (NULL != p_stats)
+    {
+        result = tk_loc_mtx(gh_stats_lock, TMO_FEVR);
+
+        if (E_OK == result)
+        {
+            *p_stats = g_published_stats;
+            result   = tk_unl_mtx(gh_stats_lock);
+        }
+    }
+
+    return (result);
 }
 
 /*!
@@ -136,7 +182,7 @@ producer_task (INT start_code, void * p_exinf)
 }
 
 /*!
- * @brief Send the capture statistics to the health monitor.
+ * @brief Publish the capture statistics to readers and the health monitor.
  */
 static void
 publish_status (void)
@@ -144,6 +190,16 @@ publish_status (void)
     monitor_status_message_t message = {0};
 
     g_stats.heartbeat++;
+
+    // Never block the capture task: if a reader holds the lock, the copy is
+    // simply updated at the next report.
+    if (E_OK == tk_loc_mtx(gh_stats_lock, TMO_POL))
+    {
+        g_published_stats = g_stats;
+
+        // Unlocking a mutex this task holds cannot fail.
+        (void) tk_unl_mtx(gh_stats_lock);
+    }
     message.source       = STATUS_SOURCE_CAPTURE;
     message.generated_us = monitor_time_us();
     message.data.capture = g_stats;
