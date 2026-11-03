@@ -1,7 +1,7 @@
-/** @file subsystem2.c
+/** @file capture.c
  *
- * @brief Subsystem 2, Ethernet capture: creates the bounded capture frame
- * pool and starts the capture producer task.
+ * @brief Ethernet capture: creates the bounded capture frame pool and starts
+ * the capture producer task.
  *
  * @par
  * A counting semaphore guards a fixed-size memory pool, so the semaphore
@@ -13,13 +13,13 @@
 #include <stdint.h>
 
 #include "../monitor_config.h"
-#include "subsystem2.h"
+#include "capture.h"
 #include "task_producer.h"
 
 #define POOL_BLOCK_COUNT (MONITOR_FRAME_BLOCKS)
 #define ONE_SLOT         (1)
 
-// Kernel object handles, created once by subsystem2_init().
+// Kernel object handles, created once by capture_init().
 //
 static ID gh_frame_slots = 0;
 static ID gh_frame_pool  = 0;
@@ -30,7 +30,7 @@ static ID gh_frame_pool  = 0;
  * @return E_OK, or the kernel error code.
  */
 ER
-subsystem2_init (void)
+capture_init (void)
 {
     T_CSEM slots  = {0};
     T_CMPF pool   = {0};
@@ -67,7 +67,7 @@ subsystem2_init (void)
  * @return E_OK, or the kernel error code.
  */
 ER
-subsystem2_start (void)
+capture_start (void)
 {
     ID const task_id = task_producer_start();
 
@@ -83,7 +83,7 @@ subsystem2_start (void)
  * @return The frame, or NULL if none is free.
  */
 capture_frame_t *
-subsystem2_frame_acquire (bool * pb_cleanup_failed)
+capture_frame_acquire (bool * pb_cleanup_failed)
 {
     capture_frame_t * p_frame = NULL;
 
@@ -114,12 +114,12 @@ subsystem2_frame_acquire (bool * pb_cleanup_failed)
 /*!
  * @brief Give a frame back to the pool.
  *
- * @param[in] p_frame The frame from subsystem2_frame_acquire().
+ * @param[in] p_frame The frame from capture_frame_acquire().
  *
  * @return E_OK, or the kernel error code.
  */
 ER
-subsystem2_frame_release (capture_frame_t * p_frame)
+capture_frame_release (capture_frame_t * p_frame)
 {
     ER result = E_PAR;
 
@@ -145,7 +145,7 @@ subsystem2_frame_release (capture_frame_t * p_frame)
  * @return E_OK, or the kernel error code.
  */
 ER
-subsystem2_pool_status (uint32_t * p_free_slots, uint32_t * p_free_blocks)
+capture_pool_status (uint32_t * p_free_slots, uint32_t * p_free_blocks)
 {
     T_RSEM slots  = {0};
     T_RMPF pool   = {0};

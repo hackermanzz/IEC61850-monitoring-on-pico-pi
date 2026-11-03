@@ -1,7 +1,7 @@
 /** @file task_producer.c
  *
  * @brief Capture producer task: turns finished RMII captures into checked
- * capture frames for the analysis subsystem, and publishes capture health.
+ * capture frames for the analysis module, and publishes capture health.
  *
  * @par
  * Each capture is decoded and FCS-checked. Only GOOSE and SV frames are
@@ -18,22 +18,22 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "../analysis/analysis.h"
+#include "../health/health.h"
 #include "../monitor_config.h"
 #include "../monitor_stacks.h"
 #include "../monitor_time.h"
-#include "../subsystem3/subsystem3.h"
-#include "../subsystem4/subsystem4.h"
+#include "capture.h"
 #include "capture_frame.h"
 #include "rmii_frame.h"
-#include "subsystem2.h"
 #include "task_producer.h"
 
 #if !MONITOR_SYNTHETIC
 #include "rmii_capture_hw.h"
 #endif
 
-// Status reporting. The source number identifies subsystem 2 to the health
-// monitor and to the stack report.
+// Status reporting. The source number identifies the capture module to the
+// health monitor and to the stack report.
 //
 #define STATUS_SOURCE_CAPTURE (2u)
 #define STATUS_PERIOD_US      (100000u)
@@ -150,7 +150,7 @@ publish_status (void)
 
     // A full status queue only delays the next report, so the result is not
     // needed.
-    (void) subsystem4_publish(&message);
+    (void) health_publish(&message);
 
     g_last_report_us = monitor_time_us();
     MONITOR_STACK_REPORT(STATUS_SOURCE_CAPTURE);
@@ -165,8 +165,7 @@ static capture_frame_t *
 acquire_frame (void)
 {
     bool                    b_cleanup_failed = false;
-    capture_frame_t * const p_frame =
-        subsystem2_frame_acquire(&b_cleanup_failed);
+    capture_frame_t * const p_frame = capture_frame_acquire(&b_cleanup_failed);
 
     if (b_cleanup_failed)
     {
@@ -189,7 +188,7 @@ acquire_frame (void)
 static void
 release_frame (capture_frame_t * p_frame)
 {
-    if (E_OK != subsystem2_frame_release(p_frame))
+    if (E_OK != capture_frame_release(p_frame))
     {
         g_stats.cleanup_failed++;
     }

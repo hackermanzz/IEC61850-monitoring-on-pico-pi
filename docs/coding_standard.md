@@ -16,7 +16,8 @@ rules are checked automatically, and where the project deviates.
 
 | Item | Rule | Example |
 |---|---|---|
-| File (module) | lowercase, digits, `_`; `.c` + `.h` pair (4.1, 4.2.a) | `rmii_frame.c` |
+| Folder | what the module does, never a number | `capture/` |
+| File (module) | lowercase, digits, `_`; `.c` + `.h` pair; unique in the first 8 characters (4.1, 4.2.a) | `rmii_frame.c` |
 | Public function | `<module>_<verb>`, no capitals, max 31 chars (6.1) | `rmii_frame_crc()` |
 | Task function | ends in `_task` (6.4) | `producer_task()` |
 | ISR | ends in `_isr`, `static` (6.5) | `crs_dv_isr()` |
@@ -80,7 +81,6 @@ Combined prefixes go in the order `[g][p|pp][b|h]`, e.g. `gb_armed`.
 |---|---|---|
 | 1.1.a | The build uses `-std=gnu11`, not C99. | Set by the shared micro T-Kernel template build. C11 `_Static_assert` is used for compile-time layout checks. |
 | 1.1.c | `__builtin_ctz` and `__asm volatile("nop")` are used. | Only in hardware/driver modules, each with a `NOTE:` comment. |
-| 4.1.b | `subsystem1` ... `subsystem5` share their first 8 characters. | File names are fixed by the course template. |
 | 5.2.a | micro T-Kernel types (`ER`, `ID`, `INT`, `T_MSG`, ...) appear in kernel calls. | They are the kernel API types. |
 | all | Generated files (for example `*.pio.h` from `pioasm`) and `third_party/` are not checked. | They must not be edited by hand. |
 
