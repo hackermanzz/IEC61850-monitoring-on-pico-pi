@@ -1,0 +1,47 @@
+# Secrets: copy the matching *.example.h and fill in your own values.
+# Never commit the real files.
+wifi_secrets.h
+telegram_secrets.h
+wifi_notification_config.h
+*secrets*.h
+!*secrets*.example.h
+*.env
+.env*
+*.key
+*.p12
+*.pfx
+
+# Build output.
+build/
+build_*/
+!build_make/
+*.o
+*.d
+*.a
+*.elf
+*.uf2
+*.bin
+*.hex
+*.map
+*.dis
+*.lst
+tools/elf2uf2
+
+# Editor and OS files.
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python.
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Local copies that must not be shared.
+barr_c_coding_standard_2018.pdf
+*.zip
