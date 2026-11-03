@@ -5,8 +5,8 @@
  *
  * @par
  * Each capture is decoded and FCS-checked. Only GOOSE and SV frames are
- * kept; each is numbered, copied into a pool frame and sent to the analysis
- * consumer's mailbox. Capture statistics go to the health monitor.
+ * kept; each is numbered, copied into a pool frame and handed over to the
+ * analysis module. Capture statistics go to the health monitor.
  *
  * @par
  * With MONITOR_SYNTHETIC the task sends small artificial frames instead, to
@@ -195,18 +195,18 @@ release_frame (capture_frame_t * p_frame)
 }
 
 /*!
- * @brief Send a filled frame to the analysis consumer's mailbox.
+ * @brief Hand a filled frame over to the analysis module.
  *
  * @par
- * A successful send transfers ownership of the frame to the consumer, so the
- * frame must not be touched afterwards.
+ * A successful hand-over transfers ownership of the frame to the analysis
+ * task, so the frame must not be touched afterwards.
  *
  * @param[in] p_frame The frame.
  */
 static void
 send_frame (capture_frame_t * p_frame)
 {
-    if (E_OK != tk_snd_mbx(mbx_samples, &p_frame->header))
+    if (E_OK != analysis_submit_frame(p_frame))
     {
         g_stats.send_failed++;
         release_frame(p_frame);
