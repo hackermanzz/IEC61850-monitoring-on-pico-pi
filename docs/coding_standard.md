@@ -82,6 +82,8 @@ Combined prefixes go in the order `[g][p|pp][b|h]`, e.g. `gb_armed`.
 | 1.1.a | The build uses `-std=gnu11`, not C99. | Set by the shared micro T-Kernel template build. C11 `_Static_assert` is used for compile-time layout checks. |
 | 1.1.c | `__builtin_ctz` and `__asm volatile("nop")` are used. | Only in hardware/driver modules, each with a `NOTE:` comment. |
 | 5.2.a | micro T-Kernel types (`ER`, `ID`, `INT`, `T_MSG`, ...) appear in kernel calls. | They are the kernel API types. |
+| 6.2.c | The frame parsers and stream look-ups in `analysis/analyzer.c` return as soon as input is malformed or the answer is known. | One exit is a preferred practice, not a rule; early returns keep the bounds checks flat and easy to review. |
+| 7.1.m | The `bool` members of `analyzer_result_t` have no `b_` prefix. | The storage, health and alarm modules share these member names. |
 | all | Generated files (for example `*.pio.h` from `pioasm`) and `third_party/` are not checked. | They must not be edited by hand. |
 
 ## Abbreviations (rule 1.5.b)
@@ -90,26 +92,41 @@ The abbreviations in Appendix A of BARR-C:2018 may be used. The project adds:
 
 | Abbreviation | Meaning |
 |---|---|
+| apdu | application protocol data unit |
+| appid | IEC 61850 application identifier |
+| asdu | application service data unit (one SV sample set) |
+| ber | Basic Encoding Rules (ASN.1) |
+| conf_rev | configuration revision (confRev) |
 | crc | cyclic redundancy check |
 | crs_dv | carrier sense / receive data valid (RMII signal) |
 | diag | diagnostics |
 | dibit | a two-bit RMII receive symbol |
 | dma | direct memory access |
 | fcs | frame check sequence (Ethernet CRC-32) |
+| fnv | Fowler-Noll-Vo hash |
+| gocb | GOOSE control block (gocbRef) |
 | goose | Generic Object Oriented Substation Event (IEC 61850-8-1) |
 | hw | hardware |
 | iec | International Electrotechnical Commission |
+| mac | medium access control (Ethernet address) |
+| mbx | mailbox (micro T-Kernel) |
 | mdc / mdio | management data clock / input-output (PHY management bus) |
 | mpf | fixed-size memory pool (micro T-Kernel) |
-| mbx | mailbox (micro T-Kernel) |
+| nds_com | needs commissioning (ndsCom) |
+| pdu | protocol data unit |
 | phy | Ethernet physical-layer transceiver (LAN8720) |
 | pio | programmable I/O block (RP2040) |
 | rmii | Reduced Media-Independent Interface |
+| scd / scl | substation configuration description / language |
 | sfd | start frame delimiter |
 | sm | PIO state machine |
 | smp | symmetric multiprocessing |
+| smp_cnt / smp_synch | SV sample count / sample synchronisation |
+| sq / st | GOOSE sequence / state number (sqNum, stNum) |
 | sv | Sampled Values (IEC 61850-9-2) |
 | tls | Transport Layer Security |
+| tlv | tag-length-value element |
+| ttl | time allowed to live |
 | vlan | virtual LAN (IEEE 802.1Q tag) |
 
 ## Reference
