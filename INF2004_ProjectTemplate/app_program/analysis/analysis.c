@@ -1,44 +1,44 @@
 /** @file analysis.c
  *
- * @brief Analysis and rules: parses GOOSE and SV frames and runs the rule
- * checks and models.
- *
- * @par
- * NOTE: Frames arrive from the capture module through
- * analysis_submit_frame() (see ../capture/capture_frame.h). Give each frame
- * back with capture_frame_release() once it has been analysed.
+ * @brief Analysis and rules: start-up, the frame hand-over from the capture
+ * module, and the on-target tests.
  */
 
+#include "../monitor_config.h"
+#include "../monitor_status.h"
 #include "analysis.h"
+#include "task_consumer.h"
+
+#if APP_TEST
+#include "../test_report.h"
+
+// Time for the synthetic capture task to deliver a few frames.
+//
+#define SYNTHETIC_WAIT_MS (2000)
+#endif
 
 /*!
- * @brief Create the kernel objects this module needs.
+ * @brief Create the frame mailbox and the statistics lock.
  *
  * @return E_OK, or the kernel error code.
  */
 ER
 analysis_init (void)
 {
-    ER result = E_OK;
-
-    // TODO: Create the queues, pools and other kernel objects.
-
-    return (result);
+    return (task_consumer_init());
 }
 
 /*!
- * @brief Start the tasks of this module.
+ * @brief Start the analysis consumer task.
  *
  * @return E_OK, or the kernel error code.
  */
 ER
 analysis_start (void)
 {
-    ER result = E_OK;
+    ID const task_id = task_consumer_start();
 
-    // TODO: Start the tasks.
-
-    return (result);
+    return ((task_id < E_OK) ? task_id : E_OK);
 }
 
 /*!
@@ -55,11 +55,45 @@ analysis_start (void)
 ER
 analysis_submit_frame (capture_frame_t * p_frame)
 {
-    // TODO: Queue the frame for the analysis task. Until then every frame is
-    // refused, so the capture task gives it straight back to the pool.
-    (void) p_frame;
-
-    return (E_NOSPT);
+    return (task_consumer_submit(p_frame));
 }
+
+#if APP_TEST
+
+/*!
+ * @brief Check the published counters, and with MONITOR_SYNTHETIC that
+ *        frames reach the analysis task.
+ */
+void
+analysis_test (void)
+{
+    monitor_analysis_stats_t before = {0};
+    ER                       result = E_OK;
+
+    TEST_INIT();
+
+    result = task_consumer_read_stats(&before);
+    TEST_CHECK("ANALYSIS-U01",
+               (E_OK == result)
+                   && (before.received == (before.accepted + before.rejected)),
+               "published receive counters are consistent");
+
+#if MONITOR_SYNTHETIC
+    {
+        monitor_analysis_stats_t after = {0};
+
+        // The delay only paces the test, so its result is not needed.
+        (void) tk_dly_tsk(SYNTHETIC_WAIT_MS);
+        result = task_consumer_read_stats(&after);
+        TEST_CHECK("INT-01",
+                   (E_OK == result) && (after.accepted > before.accepted),
+                   "synthetic frames reach the consumer");
+    }
+#endif
+
+    TEST_SUMMARY("analysis");
+}
+
+#endif /* APP_TEST */
 
 /*** end of file ***/

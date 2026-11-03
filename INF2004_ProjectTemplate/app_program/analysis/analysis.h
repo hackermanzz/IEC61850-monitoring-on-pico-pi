@@ -1,15 +1,12 @@
 /** @file analysis.h
  *
- * @brief Analysis and rules: parses GOOSE and SV frames and runs the rule
- * checks and models.
+ * @brief Analysis and rules: parses GOOSE and SV frames, runs the rule
+ * checks and models, and raises incidents.
  *
  * @par
  * The capture task hands each frame over with analysis_submit_frame(). The
  * analysis task gives it back with capture_frame_release() once the frame
  * has been analysed.
- *
- * @par
- * TODO: Add the rest of the public interface of this module.
  */
 #ifndef ANALYSIS_H
 #define ANALYSIS_H
@@ -20,6 +17,10 @@
 ER analysis_init(void);
 ER analysis_start(void);
 ER analysis_submit_frame(capture_frame_t * p_frame);
+
+#if APP_TEST
+void analysis_test(void);
+#endif
 
 #endif /* ANALYSIS_H */
 
