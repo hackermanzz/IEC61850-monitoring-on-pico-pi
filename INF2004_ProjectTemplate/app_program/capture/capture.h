@@ -23,6 +23,10 @@ capture_frame_t * capture_frame_acquire(bool * pb_cleanup_failed);
 ER                capture_frame_release(capture_frame_t * p_frame);
 ER capture_pool_status(uint32_t * p_free_slots, uint32_t * p_free_blocks);
 
+#if APP_TEST
+void capture_test(void);
+#endif
+
 #endif /* CAPTURE_H */
 
 /*** end of file ***/
