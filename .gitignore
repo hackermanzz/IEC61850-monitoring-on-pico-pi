@@ -45,3 +45,10 @@ venv/
 # Local copies that must not be shared.
 barr_c_coding_standard_2018.pdf
 *.zip
+AGENTS.md
+SESSION_HANDOFF.md
+
+INF2004_Pico2W_Port/third_party
+INF2004_Pico2W_Port/testing
+INF2004_Pico2W_Port/platform
+INF2004_Pico2W_Port/run_these.ps1
