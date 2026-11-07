@@ -1,5 +1,5 @@
 /** @file config.h
- * @brief v0.3 uses static user buffers and a single scheduler core.
+ * @brief Static user buffers with an explicitly selected core-count profile.
  */
 #ifndef PORT_CONFIG_H
 #define PORT_CONFIG_H
@@ -18,7 +18,7 @@
 #undef CNF_TMP_STACK_SIZE
 #define CNF_TMP_STACK_SIZE 1024
 
-#define CNF_SMP 0
+#define CNF_SMP PORT_SMP
 
 #endif /* PORT_CONFIG_H */
 

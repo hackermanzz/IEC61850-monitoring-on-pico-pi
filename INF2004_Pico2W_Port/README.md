@@ -1,16 +1,15 @@
 # Pico 2 W port
 
-This folder now has two build profiles: a standalone SDK clock/time/PHY-ID
-image (v0.1-v0.2) and a micro T-Kernel **single-core** verification image
-(v0.3). Both target Pico 2 W / RP2350 Arm Secure. They build successfully;
-board execution and PHY identity remain unqualified. Dual-core SMP is v0.4.
+Three build profiles target Pico 2 W / RP2350 Arm Secure: the SDK diagnostic,
+single-core micro T-Kernel v0.3-r1, and the new dual-core v0.4-dev2 acceptance
+image. **The supplied board log passes all nine v0.3 checks, identifies LAN8720
+at address 1 (0007/c0f1), and shows eight increasing heartbeats.**
 
-The first board log reached kernel startup and passed the semaphore timeout
-check, then panicked. Kernel revision `0.3-r1` is rebuilt with a PRIMASK
-synchronization fix, 64 semaphore handoffs and persistent error reporting.
-The user reports heartbeat/time output on the rerun, confirming progress past
-the original panic. Full CHECK results, revision and PHY IDs remain to be
-collected; the remaining board gates stay open.
+v0.4-dev2 now builds with SDK Core 1 launch, the course SMP scheduler, a global
+kernel lock, inter-core rescheduling and dual-core tests. It has not yet run on
+the board. The exact previously tested UF2 is preserved locally as
+`build/kernel/known-working-v03-r1.uf2`. Cold-boot/long-soak/fault-injection and
+capture qualification remain separate checks.
 
 ```text
 INF2004_Pico2W_Port/
@@ -21,7 +20,7 @@ INF2004_Pico2W_Port/
     storage/             future S1 SD
     health/              future S4 evidence/supervision
     alarm/               future S5 alarm/notifications
-  config/config.h        single-core static-buffer kernel profile
+  config/config.h        static-buffer kernel profiles
   platform/              RP2350 context, interrupts, tick and faults
   third_party/mtkernel/  recovered course kernel, license and provenance
   testing/host/          real MDIO driver with electrical trace stubs
@@ -37,6 +36,7 @@ From this directory in PowerShell:
 ```powershell
 .\run_these.ps1 -Profile diagnostic
 .\run_these.ps1 -Profile kernel
+.\run_these.ps1 -Profile smp
 ```
 
 The default profile is `diagnostic`. Outputs are separate:
@@ -44,7 +44,8 @@ The default profile is `diagnostic`. Outputs are separate:
 | Profile | UF2 | Behavior |
 | --- | --- | --- |
 | diagnostic | `build/diagnostic/pico2w_diagnostic.uf2` | Read-only PHY address scan, then clock/time output. |
-| kernel | `build/kernel/pico2w_kernel_v03.uf2` | Real kernel scheduler/IPC checks, PHY scan, then kernel-delayed heartbeat. Core 1 remains parked. |
+| kernel | `build/kernel/pico2w_kernel_v03.uf2` | Single-core scheduler/IPC checks, PHY scan and heartbeat. |
+| smp | `build/smp/pico2w_kernel_smp_v04.uf2` | Original checks plus Core 1 affinity, delayed mailbox replies, shared counter and remote alarm/audits. |
 
 The script works from any working directory and uses installed SDK 2.3.1,
 CMake 4.3.4, Ninja 1.13.2, Arm GCC 15.2.1 and picotool 2.3.1. It accepts
@@ -57,10 +58,15 @@ They do not reset/reconfigure the PHY, start Ethernet capture, change wiring or
 send notifications. Startup waits up to 15 seconds for a USB CDC connection.
 A successful build does not establish electrical compatibility or board execution.
 
+The [SMP implementation walkthrough](platform/smp/README.md) explains how the
+two cores share a kernel, how context switches work, and when to use atomics,
+spinlocks, mutexes, semaphores and mailboxes. v0.4-dev2 adds a cross-core
+priority-inheritance mutex test and a plain counter protected by that mutex.
+
 ## Verification and implementation notes
 
-On November 7, both profiles built and generated RP2350 Arm Secure UF2s.
-The MDIO host trace suite and the BARR-C/format checks passed for the 28 new
+On November 7, all three profiles built and generated RP2350 Arm Secure UF2s.
+The MDIO host trace suite and the BARR-C/format checks passed for the 34 first-party
 C/header files. Recovered third-party code retains its original style.
 
 See [verification commands and board acceptance](testing/README.md),
@@ -87,8 +93,8 @@ FPU task context and per-task libc state remain unsupported in this bring-up.
 ## Progress and version roadmap
 
 Reviewed 2026-11-07. Target: **Pico 2 W / RP2350 Arm Cortex-M33 with
-micro T-Kernel 3 SMP**. The current kernel profile implements the single-core
-bring-up stage; hardware acceptance remains pending.
+micro T-Kernel 3 SMP**. Single-core functional board checks pass; the new
+SMP development image awaits hardware acceptance.
 The versions below are proposed engineering milestones, not existing releases,
 Git tags, or kernel version numbers. There are no completion-date estimates yet;
 the kernel port and PHY timing need measured evidence first.
@@ -97,17 +103,17 @@ the kernel port and PHY timing need measured evidence first.
 
 | Area | Active Pico 2 W port | Evidence and remaining work |
 | --- | --- | --- |
-| Build and board diagnostic | Implemented and rebuilt | Both profiles build with SDK 2.3.1 / Arm GCC 15.2.1 and generate UF2s. Board console/time evidence is pending. |
-| PHY management | Implemented; host-tested | Complete read transactions, ACK handling, exact raw IDs and address scan. Host wire/timing/error tests pass; LAN8720 board IDs are pending. |
+| Build and board diagnostic | Implemented and rebuilt | All three profiles build with SDK 2.3.1 / Arm GCC 15.2.1 and generate UF2s. A v0.3 board console/heartbeat log is saved. |
+| PHY management | Implemented; host-tested | Complete read transactions, ACK handling, exact raw IDs and address scan. Host wire/timing/error tests pass; Board ID1=0007/ID2=c0f1 at address 1 observed. |
 | Real packet capture | Not ported | No active PIO/DMA receiver, decoder or frame handoff in this folder. |
-| micro T-Kernel platform | Single-core adapter and acceptance image build | Real course kernel common sources plus RP2350 PSP context, interrupts, tick and fault record. Runtime acceptance and SMP remain pending. |
+| micro T-Kernel platform | Single-core checks pass; SMP development image builds | Real course kernel common sources plus RP2350 PSP context, interrupts, tick and fault record. Supplied v0.3 runtime checks pass; SMP acceptance is pending. |
 | Analysis | Folder placeholder | Reusable parser, rules, features and generated models exist in the reference folder, not this executable. |
 | Incidents, health, SD, alarm, notifications | Folder placeholders | End-to-end application behavior remains to be implemented. |
-| Hardware qualification | Pending | Prior diagnostic success was user-reported without a supplied board log. No documented PHY-ID, packet capture, kernel/SMP, latency or full-system RAM proof. |
+| Hardware qualification | Partial board evidence | v0.3-r1: nine checks PASS, failures=0, LAN8720 IDs and eight heartbeats. SMP, long soak, repeated boots, fault injection and capture performance remain unqualified. |
 
-**v0.1-v0.3 software is implemented and buildable; their board acceptance gates
-remain open.** v0.2 has host transaction tests; v0.3 has compiled on-board
-acceptance tests. Neither result substitutes for running those images on RP2350.
+**v0.3-r1 now has a supplied passing functional board log**, including PHY
+identification. v0.4-dev2 is implemented and buildable with hardware acceptance
+pending. Repeatability, longer soak and fault injection remain unqualified.
 It is too early for a meaningful overall completion percentage.
 
 `../INF2004_ProjectTemplate/app_program/` contains capture and analysis source
@@ -181,10 +187,12 @@ they must each be checked with the combined system.
 
 ### Immediate next task
 
-Run the documented board checks in order: diagnostic clock/time and repeatable
-PHY IDs, then the single-core kernel acceptance suite and heartbeat. Capture the
-raw output and debugger fault evidence; correct any observed failures before
-claiming v0.1-v0.3 qualified or enabling SMP. Direct implementation of v0.1-v0.3
-is now user-authorized; continue supplying ample explanatory comments and
-BARR-C-style code. This does not authorize Git releases, wiring changes, live
-notifications or automatic resumption of the earlier cleared hardware goal.
+Run the `smp` image and capture its full v0.4-dev2 output. Require the original
+checks, all SMP checks, counter=10000, worker_core=1, wrong_core_ticks=0 and
+failures=0, followed by PHY identification and increasing heartbeat. See the
+[board test guide](testing/README.md). Restore the known-working v0.3-r1 fallback
+if the new bring-up stalls. After SMP qualification, proceed to PIO/DMA capture.
+
+Kernel, adapter and test sources are currently local/ignored by this checkout's
+Git configuration. Their presence here does not mean they are committed or
+available in a fresh clone; no force-adding, staging or commits were performed.

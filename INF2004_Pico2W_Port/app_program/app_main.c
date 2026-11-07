@@ -61,7 +61,11 @@ main (void)
     }
 
 #if PORT_KERNEL
+#if PORT_SMP
+    printf("Starting RP2350 SMP kernel; board tests follow.\n");
+#else
     printf("Starting RP2350 single-core kernel; board tests follow.\n");
+#endif
     /* The SDK owns reset/boot metadata; the kernel owns task scheduling. */
     kernel_port_start();
 #else

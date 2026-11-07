@@ -7,6 +7,10 @@ project(pico2w_diagnostic C CXX ASM)
 pico_sdk_init()
 
 option(PORT_KERNEL "Build the v0.3 single-core course-kernel harness" OFF)
+option(PORT_SMP "Build the v0.4 dual-core course-kernel harness" OFF)
+if(PORT_SMP AND NOT PORT_KERNEL)
+    message(FATAL_ERROR "PORT_SMP requires PORT_KERNEL")
+endif()
 if(NOT PICO_BOARD STREQUAL "pico2_w" OR
    NOT PICO_PLATFORM STREQUAL "rp2350-arm-s")
     message(FATAL_ERROR "This port requires pico2_w / rp2350-arm-s")
@@ -14,7 +18,9 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-if(PORT_KERNEL)
+if(PORT_SMP)
+    set(PORT_IMAGE pico2w_kernel_smp_v04)
+elseif(PORT_KERNEL)
     set(PORT_IMAGE pico2w_kernel_v03)
 else()
     set(PORT_IMAGE pico2w_diagnostic)
@@ -29,6 +35,7 @@ file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
 )
 add_executable(${PORT_IMAGE} ${APP_SOURCES})
 target_compile_definitions(${PORT_IMAGE} PRIVATE PORT_KERNEL=$<BOOL:${PORT_KERNEL}>)
+target_compile_definitions(${PORT_IMAGE} PRIVATE PORT_SMP=$<BOOL:${PORT_SMP}>)
 set_source_files_properties(${APP_SOURCES} PROPERTIES
     COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
 
