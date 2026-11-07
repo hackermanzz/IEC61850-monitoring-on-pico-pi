@@ -1,6 +1,6 @@
 param(
     [string] $SdkPath = (Join-Path $env:USERPROFILE '.pico-sdk/sdk/2.3.1'),
-    [ValidateSet('diagnostic', 'kernel', 'smp')]
+    [ValidateSet('diagnostic', 'kernel', 'smp', 'capture')]
     [string] $Profile = 'diagnostic'
 )
 
@@ -27,18 +27,27 @@ try {
     $env:PICO_SDK_PATH = $SdkPath
     $buildDirectory = Join-Path $PSScriptRoot "build/$Profile"
     $kernelOption = if ($Profile -ne 'diagnostic') { 'ON' } else { 'OFF' }
-    $smpOption = if ($Profile -eq 'smp') { 'ON' } else { 'OFF' }
-    $imageName = if ($Profile -eq 'smp') {
+    $smpOption = if ($Profile -in @('smp', 'capture')) { 'ON' } else { 'OFF' }
+    $captureOption = if ($Profile -eq 'capture') { 'ON' } else { 'OFF' }
+    $imageName = if ($Profile -eq 'capture') {
+        'pico2w_capture_v05'
+    } elseif ($Profile -eq 'smp') {
         'pico2w_kernel_smp_v04'
     } elseif ($Profile -eq 'kernel') {
         'pico2w_kernel_v03'
     } else { 'pico2w_diagnostic' }
     $picotoolDirectory = Join-Path $picoToolsRoot 'picotool/2.3.1/picotool'
+    $pioasmDirectory = Join-Path $picoToolsRoot 'tools/2.3.1/pioasm'
+    if (-not (Test-Path -LiteralPath (Join-Path $pioasmDirectory 'pioasmConfig.cmake'))) {
+        throw "Installed PIO assembler not found: $pioasmDirectory"
+    }
 
     & cmake -S $PSScriptRoot -B $buildDirectory -G Ninja `
         -DPICO_BOARD=pico2_w -DPICO_PLATFORM=rp2350-arm-s `
         "-DPICO_SDK_PATH=$SdkPath" "-Dpicotool_DIR=$picotoolDirectory" `
+        "-Dpioasm_DIR=$pioasmDirectory" `
         "-DPORT_KERNEL=$kernelOption" "-DPORT_SMP=$smpOption" `
+        "-DPORT_CAPTURE=$captureOption" `
         -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
 

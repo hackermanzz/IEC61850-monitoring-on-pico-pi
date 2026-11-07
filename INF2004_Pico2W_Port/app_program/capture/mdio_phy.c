@@ -1,5 +1,5 @@
 /** @file mdio_phy.c
- * @brief Read-only Clause 22 management for the confirmed LAN8720 wires.
+ * @brief Clause 22 management for the confirmed LAN8720 wires.
  *
  * MDC clocks management bits; MDIO carries management commands and replies.
  * Neither wire carries Ethernet packets. MDIO is driven low or released so
@@ -15,23 +15,27 @@
 #include "pico/binary_info.h" /* Inspect actual pin use with picotool. */
 #endif
 
-#define MDIO_PIN              2u
-#define MDC_PIN               3u
-#define MDIO_HALF_PERIOD_US   1u
-#define MDIO_PREAMBLE_BITS    32u
-#define MDIO_START_BITS       2u
-#define MDIO_START_VALUE      1u
-#define MDIO_OPCODE_BITS      2u
-#define MDIO_READ_OPCODE      2u
-#define MDIO_ADDRESS_BITS     5u
-#define MDIO_DATA_BITS        16u
-#define MDIO_ID1_ADDRESS      2u
-#define MDIO_ID2_ADDRESS      3u
-#define MDIO_LAN8720_ID1      0x0007u
-#define MDIO_LAN8720_ID2_MASK 0xfff0u
-#define MDIO_LAN8720_ID2      0xc0f0u
+#define MDIO_PIN                  2u
+#define MDC_PIN                   3u
+#define MDIO_HALF_PERIOD_US       1u
+#define MDIO_WRITE_HALF_PERIOD_US 10u
+#define MDIO_PREAMBLE_BITS        32u
+#define MDIO_START_BITS           2u
+#define MDIO_START_VALUE          1u
+#define MDIO_OPCODE_BITS          2u
+#define MDIO_READ_OPCODE          2u
+#define MDIO_ADDRESS_BITS         5u
+#define MDIO_DATA_BITS            16u
+#define MDIO_ID1_ADDRESS          2u
+#define MDIO_ID2_ADDRESS          3u
+#define MDIO_LAN8720_ID1          0x0007u
+#define MDIO_LAN8720_ID2_MASK     0xfff0u
+#define MDIO_LAN8720_ID2          0xc0f0u
 
-static bool gb_initialized = false;
+static bool     gb_initialized = false;
+static bool     gb_verify_release;
+static bool     gb_write_line_ok;
+static uint32_t g_half_period_us = MDIO_HALF_PERIOD_US;
 
 #ifdef PICO_ON_DEVICE
 bi_decl(bi_1pin_with_name(MDIO_PIN, "LAN8720 MDIO (released or low)"));
@@ -103,6 +107,35 @@ mdio_phy_read (uint8_t phy_addr, uint8_t reg_addr, uint16_t * p_value)
 }
 
 bool
+mdio_phy_write (uint8_t phy_addr, uint8_t reg_addr, uint16_t value)
+{
+    bool b_valid = gb_initialized && (32u > phy_addr) && (32u > reg_addr);
+
+    if (b_valid)
+    {
+        /* Check that released ones reach high before their rising edge.
+         * Slow writes allow more pull-up settling; no PHY write ACK exists.
+         */
+        gb_verify_release = true;
+        gb_write_line_ok  = true;
+        g_half_period_us  = MDIO_WRITE_HALF_PERIOD_US;
+        mdio_phy_send_bits(UINT32_MAX, MDIO_PREAMBLE_BITS);
+        mdio_phy_send_bits(MDIO_START_VALUE, MDIO_START_BITS);
+        mdio_phy_send_bits(1u, MDIO_OPCODE_BITS); /* Write opcode is 01. */
+        mdio_phy_send_bits(phy_addr, MDIO_ADDRESS_BITS);
+        mdio_phy_send_bits(reg_addr, MDIO_ADDRESS_BITS);
+        mdio_phy_send_bits(2u, 2u); /* Station owns turnaround: 10. */
+        mdio_phy_send_bits(value, MDIO_DATA_BITS);
+        (void) mdio_phy_read_bit();
+        mdio_phy_idle();
+        b_valid           = gb_write_line_ok;
+        gb_verify_release = false;
+        g_half_period_us  = MDIO_HALF_PERIOD_US;
+    }
+    return b_valid;
+}
+
+bool
 mdio_phy_identify (uint8_t phy_addr, mdio_phy_id_t * p_identity)
 {
     bool          b_found  = false;
@@ -144,9 +177,13 @@ mdio_phy_write_bit (bool b_is_high)
         gpio_set_dir(MDIO_PIN, GPIO_OUT);
     }
 
-    busy_wait_us_32(MDIO_HALF_PERIOD_US);
+    busy_wait_us_32(g_half_period_us);
+    if (gb_verify_release && b_is_high && (!gpio_get(MDIO_PIN)))
+    {
+        gb_write_line_ok = false;
+    }
     gpio_put(MDC_PIN, true);
-    busy_wait_us_32(MDIO_HALF_PERIOD_US);
+    busy_wait_us_32(g_half_period_us);
 }
 
 /** @brief Sample the settled low phase before advancing the rising edge. */
@@ -157,10 +194,10 @@ mdio_phy_read_bit (void)
 
     gpio_set_dir(MDIO_PIN, GPIO_IN);
     gpio_put(MDC_PIN, false);
-    busy_wait_us_32(MDIO_HALF_PERIOD_US);
+    busy_wait_us_32(g_half_period_us);
     b_is_high = gpio_get(MDIO_PIN);
     gpio_put(MDC_PIN, true);
-    busy_wait_us_32(MDIO_HALF_PERIOD_US);
+    busy_wait_us_32(g_half_period_us);
 
     return b_is_high;
 }
@@ -188,7 +225,7 @@ mdio_phy_idle (void)
 {
     gpio_set_dir(MDIO_PIN, GPIO_IN);
     gpio_put(MDC_PIN, true);
-    busy_wait_us_32(MDIO_HALF_PERIOD_US);
+    busy_wait_us_32(g_half_period_us);
 }
 
 /*** end of file ***/

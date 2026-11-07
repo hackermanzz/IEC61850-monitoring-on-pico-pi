@@ -1,0 +1,19 @@
+; Both state machines use GP4 as input base and run at 50 MHz.
+.program capture_samples
+wait 1 pin 0
+.wrap_target
+in pins, 3
+.wrap
+
+.program capture_end
+wait 1 pin 0
+high:
+set x, 15
+low:
+jmp pin high
+jmp x-- low
+; CRS_DV must remain low for 32 cycles (~640 ns). A short tail toggle
+; restarts the counter; it does not terminate the frame.
+irq 0
+halt:
+jmp halt

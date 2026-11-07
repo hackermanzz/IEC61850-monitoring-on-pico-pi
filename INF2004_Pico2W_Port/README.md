@@ -1,21 +1,28 @@
 # Pico 2 W port
 
-Three build profiles target Pico 2 W / RP2350 Arm Secure: the SDK diagnostic,
-single-core micro T-Kernel v0.3-r1, and the new dual-core v0.4-dev2 acceptance
-image. **The supplied board log passes all nine v0.3 checks, identifies LAN8720
-at address 1 (0007/c0f1), and shows eight increasing heartbeats.**
+Four build profiles target Pico 2 W / RP2350 Arm Secure: SDK diagnostic,
+single-core micro T-Kernel v0.3-r1, dual-core v0.4-dev2 acceptance, and
+**v0.5-dev4 packet capture**.
 
-v0.4-dev2 now builds with SDK Core 1 launch, the course SMP scheduler, a global
-kernel lock, inter-core rescheduling and dual-core tests. It has not yet run on
-the board. The exact previously tested UF2 is preserved locally as
-`build/kernel/known-working-v03-r1.uf2`. Cold-boot/long-soak/fault-injection and
-capture qualification remain separate checks.
+The supplied board logs pass the v0.3 single-core checks and the v0.4 SMP
+functional suite, including cross-core mailbox/alarm, mutex priority inheritance,
+shared counters and scheduler audits. LAN8720 identifies as 0007/c0f1 at address 1.
+Dev3 board verifies PHY configuration, negotiated10Mbps and receiver startup.
+All108 raw recordings reach capacity; no valid frames yet. Dev4 adds PIO
+self-tests and raw-buffer diagnostics; the acquisition fault remains unresolved.
+Known-working v0.3 and v0.4 UF2/ELF fallbacks are preserved under build/kernel
+and build/smp. Longer stress, repeated boots and fault injection remain pending.
+
+The [capture walkthrough](app_program/capture/README.md) explains the new
+implementation using actual source excerpts, plain definitions and ownership
+examples. The [board procedure](testing/README.md#v05-capture-board-procedure)
+describes its next acceptance checks.
 
 ```text
 INF2004_Pico2W_Port/
   app_program/
     app_main.c           SDK main, console/time and PHY scan
-    capture/mdio_phy.*   read-only Clause 22 management
+    capture/             MDIO, PIO/DMA RX, decoder and frame pipe
     analysis/            future parser/features/models
     storage/             future S1 SD
     health/              future S4 evidence/supervision
@@ -25,7 +32,7 @@ INF2004_Pico2W_Port/
   third_party/mtkernel/  recovered course kernel, license and provenance
   testing/host/          real MDIO driver with electrical trace stubs
   testing/kernel/        explicitly linked board acceptance suite
-  testing/capture/logs/  future board PHY evidence
+  testing/capture/       capture acceptance and board evidence
   build/                 generated outputs, ignored
 ```
 
@@ -37,6 +44,7 @@ From this directory in PowerShell:
 .\run_these.ps1 -Profile diagnostic
 .\run_these.ps1 -Profile kernel
 .\run_these.ps1 -Profile smp
+.\run_these.ps1 -Profile capture
 ```
 
 The default profile is `diagnostic`. Outputs are separate:
@@ -45,6 +53,7 @@ The default profile is `diagnostic`. Outputs are separate:
 | --- | --- | --- |
 | diagnostic | `build/diagnostic/pico2w_diagnostic.uf2` | Read-only PHY address scan, then clock/time output. |
 | kernel | `build/kernel/pico2w_kernel_v03.uf2` | Single-core scheduler/IPC checks, PHY scan and heartbeat. |
+| capture | `build/capture/pico2w_capture_v05.uf2` | SMP receive pipeline: verified 10 Mbps negotiation, GP4/5/6 PIO/DMA, CRC, bounded frame handoff and counters. |
 | smp | `build/smp/pico2w_kernel_smp_v04.uf2` | Original checks plus Core 1 affinity, delayed mailbox replies, shared counter and remote alarm/audits. |
 
 The script works from any working directory and uses installed SDK 2.3.1,
@@ -53,10 +62,11 @@ CMake 4.3.4, Ninja 1.13.2, Arm GCC 15.2.1 and picotool 2.3.1. It accepts
 on exit. New profiles must explicitly reconcile their SDK/library dependencies.
 No SDK copy is required. Flashing is a separate board operation.
 
-The images initialize only confirmed management pins GP2 MDIO / GP3 MDC.
-They do not reset/reconfigure the PHY, start Ethernet capture, change wiring or
-send notifications. Startup waits up to 15 seconds for a USB CDC connection.
-A successful build does not establish electrical compatibility or board execution.
+Diagnostic/kernel/smp profiles only read PHY management pins GP2/GP3.
+The **capture profile writes and verifies LAN8720 10 Mbps negotiation settings**,
+then samples confirmed GP4 CRS_DV / GP5 RXD0 / GP6 RXD1. REFCLK/nINT remain
+unconnected. No packet transmission, notifications or assistant flashing.
+Startup waits up to 15 seconds for USB CDC. Open the console promptly.
 
 The [SMP implementation walkthrough](platform/smp/README.md) explains how the
 two cores share a kernel, how context switches work, and when to use atomics,
@@ -65,9 +75,10 @@ priority-inheritance mutex test and a plain counter protected by that mutex.
 
 ## Verification and implementation notes
 
-On November 7, all three profiles built and generated RP2350 Arm Secure UF2s.
-The MDIO host trace suite and the BARR-C/format checks passed for the 34 first-party
-C/header files. Recovered third-party code retains its original style.
+On November 8, all four profiles built. MDIO read/write trace, generated
+decoder and ownership/interleaving host tests pass. Automated BARR/format
+checks pass 51 first-party C/header files. Third-party style is preserved.
+See the capture walkthrough for hardware and performance limits.
 
 See [verification commands and board acceptance](testing/README.md),
 [the RP2350 adapter and its limits](platform/README.md), and
@@ -92,29 +103,26 @@ FPU task context and per-task libc state remain unsupported in this bring-up.
 
 ## Progress and version roadmap
 
-Reviewed 2026-11-07. Target: **Pico 2 W / RP2350 Arm Cortex-M33 with
-micro T-Kernel 3 SMP**. Single-core functional board checks pass; the new
-SMP development image awaits hardware acceptance.
+Reviewed 2026-11-08. Target: **Pico 2 W / RP2350 Arm Cortex-M33 with
+micro T-Kernel 3 SMP**. Single-core and SMP functional board checks pass;
+capture is implemented and awaits hardware acceptance.
 The versions below are proposed engineering milestones, not existing releases,
 Git tags, or kernel version numbers. There are no completion-date estimates yet;
 the kernel port and PHY timing need measured evidence first.
 
 ### Current position
 
-| Area | Active Pico 2 W port | Evidence and remaining work |
+| Area | Progress | Remaining acceptance |
 | --- | --- | --- |
-| Build and board diagnostic | Implemented and rebuilt | All three profiles build with SDK 2.3.1 / Arm GCC 15.2.1 and generate UF2s. A v0.3 board console/heartbeat log is saved. |
-| PHY management | Implemented; host-tested | Complete read transactions, ACK handling, exact raw IDs and address scan. Host wire/timing/error tests pass; Board ID1=0007/ID2=c0f1 at address 1 observed. |
-| Real packet capture | Not ported | No active PIO/DMA receiver, decoder or frame handoff in this folder. |
-| micro T-Kernel platform | Single-core checks pass; SMP development image builds | Real course kernel common sources plus RP2350 PSP context, interrupts, tick and fault record. Supplied v0.3 runtime checks pass; SMP acceptance is pending. |
-| Analysis | Folder placeholder | Reusable parser, rules, features and generated models exist in the reference folder, not this executable. |
-| Incidents, health, SD, alarm, notifications | Folder placeholders | End-to-end application behavior remains to be implemented. |
-| Hardware qualification | Partial board evidence | v0.3-r1: nine checks PASS, failures=0, LAN8720 IDs and eight heartbeats. SMP, long soak, repeated boots, fault injection and capture performance remain unqualified. |
+| v0.1 build | Four profiles generate RP2350 UF2s | Reproduce tool setup on a fresh checkout. |
+| v0.2 PHY | Raw LAN8720 IDs board-confirmed; host reads/writes pass | Capture configuration/link readbacks on board. |
+| v0.3 kernel | Nine functional checks board-pass | Repeat boots, soak and fault injection. |
+| v0.4 SMP | Complete supplied functional suite passes, failures=0 | Longer stress, stack peaks, migration/reclaim and combined load. |
+| v0.5 capture | PIO/DMA, decoder/CRC, pool/queue and loss telemetry implemented; host tests/build pass | Real traffic, timing, independent offered-frame loss measurement. |
+| v0.6+ application | Analysis/storage/health/alarm remain placeholders | Integrate and qualify against the roadmap below. |
 
-**v0.3-r1 now has a supplied passing functional board log**, including PHY
-identification. v0.4-dev2 is implemented and buildable with hardware acceptance
-pending. Repeatability, longer soak and fault injection remain unqualified.
-It is too early for a meaningful overall completion percentage.
+These versions are engineering milestones, not released/tagged software.
+There is no meaningful overall completion percentage yet.
 
 `../INF2004_ProjectTemplate/app_program/` contains capture and analysis source
 for reuse, including fixed frame ownership and four-frame model windows. Its
@@ -131,7 +139,7 @@ firmware measurements do not qualify this port.
 | **v0.2 — PHY identification** | Capture: finish MDIO clock timing, most-significant-bit-first fields, bounded bit counts, released turnaround, ACK handling and read-register API. Scan addresses 0–31; read LAN8720 ID registers. Keep initial exercise read-only. | Build current learner code; log repeatable raw IDs and ACK/no-device behavior. Verify actual module, power and clock arrangement before selecting a receive configuration. No shifted-ID workaround. |
 | **v0.3 — RP2350 single-core kernel** | Recover the exact course RP2040 foundation as reference without restructuring Git history. Add the RP2350 Arm platform/build configuration, startup/vector table, linker and boot metadata, exception/context switching, interrupt priorities/masking, tick timer, monotonic time and fault reporting. Reconcile SDK runtime ownership. | Boot on one core; demonstrate two preempting tasks, delay/wakeup, timeout, semaphore/mailbox operations and ISR-to-task wakeup. Check register/stack preservation and fault output. Use software floating point until FPU context preservation is qualified. |
 | **v0.4 — micro T-Kernel SMP** | Bring up Core 1 and its stack/vectors; implement inter-core reschedule signalling, kernel locks/memory ordering, core affinity and interrupt ownership. Audit SIO FIFO/spinlock use, SDK coexistence and heap synchronization. | Board logs demonstrate simultaneous tasks on both cores, cross-core wakeups, priority/preemption and sustained contention without lost messages, deadlocks or corrupted state. Qualify floating-point context if enabled. Dual LED loops alone are insufficient. |
-| **v0.5 — Capture acquisition and handoff** | S2: first PIO sample and DMA raw dump in the diagnostic harness, then integrate with qualified kernel tasks/ISRs. Port RMII decoding/FCS, separate sample buffers and bounded frame pool, nonblocking queue handoff, timestamps and drop counters. Resolve CRS_DV end-of-frame behavior and publish a loss-generation signal for losses before decoding. | Compare decoded bytes/FCS with known frames and raw timing. Inject DMA overrun, pool exhaustion and queue-full conditions; prove each frame block is released exactly once and loss is visible downstream. Then measure sustained/burst capture against independent offered-frame counts. |
+| **v0.5 — Capture acquisition and handoff** | S2 implemented in its own SMP profile: 10 Mbps PHY configuration/readback, three-pin PIO sampling and qualified low-tail detector, DMA double raw buffers, bounded decoder/FCS, kernel frame pool and non-waiting pointer queue, timestamps and loss generation. | Host decoder/ownership tests pass; real-kernel pool/queue self-check awaits board execution. Compare real bytes/FCS and raw timing; test DMA overrun and exhaustion, then measure sustained/burst capture against independent offered-frame counts. |
 | **v0.6 — Analysis parity** | S3: port parsing, per-stream state, features, generated RF models and shadow rules. Preserve four-frame windows/stride two, 128-sample SV history, 52 GOOSE/72 SV inputs, four GOOSE/one SV streams and all four raw evidence frames. Reconcile shared headers/APIs. | Host replay matches reference features/model outputs; malformed frames and loss/restart paths are checked. Target build and timed board replay establish inference cost and stack/RAM use. Confirm actual SV payload schema before claiming publisher compatibility. |
 | **v0.7 — Detection, alarm and supervision** | S3 owns incident state; S4 provides bounded evidence storage and one watchdog supervisor; S5 drives the alarm. Either GOOSE or SV alone can create an incident. Add copied output queues, progress telemetry, evidence exhaustion policy and arrival-to-alarm timestamps. | GOOSE-only, SV-only and mixed cases activate the LED. Full/slow output sinks and long attacks do not stop detection. Inject a software task stall and distinguish healthy idle. Measure complete latency including window collection. |
 | **v0.8 — SD incident records** | S1: SPI/FatFs, bounded record queue, incident/evidence serialization, durable ACK matched to slot and incident ID, card-removal/full/error handling. Confirm Pico 2 W/carrier pins before enabling I/O. | Bench tests cover slow/full/removed card and ACK mismatches while detection runs. Accept FAT16/32 only; create exclusive new files under `IECLOG`, preserving all existing NOOBS files. No formatting or overwriting existing files. |
@@ -143,7 +151,7 @@ firmware measurements do not qualify this port.
 
 | Subsystem | Folder | Planned responsibility |
 | --- | --- | --- |
-| Platform | Future kernel/platform configuration | Boot, scheduling, SMP, interrupts, time, synchronization, memory and board services. Exact source layout follows inspection of the recovered course foundation. |
+| Platform | `platform/` | Implemented RP2350 boot adapter, scheduling, SMP, interrupts, time and synchronization; further stress/resource qualification pending. |
 | S1 | `app_program/storage/` | SD queue/writer, SPI/FatFs and durable completion acknowledgements. |
 | S2 | `app_program/capture/` | PHY management, PIO/DMA acquisition, decoding/FCS, frame pool, nonblocking delivery and loss telemetry. |
 | S3 | `app_program/analysis/` | Parsing, stream histories, rules/features/models and sole ownership of incident decisions/state. |
@@ -152,9 +160,10 @@ firmware measurements do not qualify this port.
 
 Provisional scheduling follows the course template's constraints: lower numeric
 priority is higher, priorities 1–4 are reserved for system services, USB/radio
-ownership remains on Core 0, and capture is a candidate for Core 1. Recalculate
-task/object counts, priorities, stack sizes and IRQ ownership after recovering
-the foundation; these are not yet implemented assignments for RP2350.
+ownership remains on Core 0, and the v0.5 capture task is pinned to Core 1 at priority 6.
+The consumer is Core 0 priority 5. This profile uses two application tasks,
+one fixed pool and one message buffer; acceptance-suite objects are excluded.
+Recalculate priorities/resources when integrating later services.
 
 ### Dependencies and decisions still needed
 
@@ -164,8 +173,6 @@ diagnostic PIO/DMA acquisition and host analysis replay can prepare inputs befor
 kernel integration. SD and notification integration follow stable incident APIs;
 they must each be checked with the combined system.
 
-- Obtain/inspect the course kernel foundation and record its exact revision,
-  license and RP2350 changes. A compiler CPU-flag change is only one part of the port.
 - Confirm the LAN8720 module and clock source, receive timing and carrier pin
   compatibility. Current confirmed wires: MDIO GP2, MDC GP3, CRS_DV GP4,
   RXD0 GP5 and RXD1 GP6; REFCLK/nINT is not connected.
@@ -187,11 +194,12 @@ they must each be checked with the combined system.
 
 ### Immediate next task
 
-Run the `smp` image and capture its full v0.4-dev2 output. Require the original
-checks, all SMP checks, counter=10000, worker_core=1, wrong_core_ticks=0 and
-failures=0, followed by PHY identification and increasing heartbeat. See the
-[board test guide](testing/README.md). Restore the known-working v0.3-r1 fallback
-if the new bring-up stalls. After SMP qualification, proceed to PIO/DMA capture.
+Run `build/capture/pico2w_capture_v05.uf2` manually and save the complete
+0.5-dev4 startup, pool/queue self-check, raw PHY status, first raw/frame and
+several CAP summaries. Begin with a connected auto-negotiating peer and low-rate
+known traffic visible at this PHY. Follow the [capture board procedure](testing/README.md#v05-capture-board-procedure).
+Do not qualify >=99% from the firmware's counters alone. Restore
+`build/smp/known-working-v04-dev2.uf2` if needed.
 
 Kernel, adapter and test sources are currently local/ignored by this checkout's
 Git configuration. Their presence here does not mean they are committed or

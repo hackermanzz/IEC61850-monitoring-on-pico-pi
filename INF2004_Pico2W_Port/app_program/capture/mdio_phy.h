@@ -1,5 +1,5 @@
 /** @file mdio_phy.h
- * @brief Single-owner, read-only LAN8720 management interface.
+ * @brief Single-owner LAN8720 management with verified read results.
  */
 #ifndef MDIO_PHY_H
 #define MDIO_PHY_H
@@ -27,6 +27,13 @@ void mdio_phy_init(void);
  * @note Call from one owner only. This API performs no PHY writes.
  */
 bool mdio_phy_read(uint8_t phy_addr, uint8_t reg_addr, uint16_t * p_value);
+
+/** @brief Write at a slower clock; verify every released outbound one is high.
+ * @return false on invalid arguments, missing init or an outbound one read low.
+ * @note This is not a PHY write ACK; register readback remains mandatory.
+ * @note Single owner only. Capture configures only an identified LAN8720.
+ */
+bool mdio_phy_write(uint8_t phy_addr, uint8_t reg_addr, uint16_t value);
 
 /** @brief Read registers 2/3; a responsive other model is still returned.
  * @param p_identity Caller-owned result, unchanged on failure.

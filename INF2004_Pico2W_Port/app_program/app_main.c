@@ -1,5 +1,6 @@
 /** @file app_main.c
- * @brief Pico 2 W diagnostic entry and optional single-core kernel boot.
+ * @brief Pico 2 W entry for diagnostics, kernel acceptance and capture
+ * profiles.
  */
 #include "app_main.h"
 
@@ -61,7 +62,9 @@ main (void)
     }
 
 #if PORT_KERNEL
-#if PORT_SMP
+#if PORT_CAPTURE
+    printf("Starting RP2350 SMP kernel; capture bring-up follows.\n");
+#elif PORT_SMP
     printf("Starting RP2350 SMP kernel; board tests follow.\n");
 #else
     printf("Starting RP2350 single-core kernel; board tests follow.\n");
