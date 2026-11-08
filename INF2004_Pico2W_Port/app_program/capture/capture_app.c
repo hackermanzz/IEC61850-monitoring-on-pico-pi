@@ -14,22 +14,24 @@
 #include "capture_hw.h"
 #include "capture_pipe.h"
 #include "capture_phy.h"
+#include "capture_test.h" /* Core 0-only marked UDP batch accounting. */
 #include "mdio_phy.h"
 
-static uint32_t             g_worker_stack[1024] __attribute__((aligned(8)));
-static atomic_int           g_worker_status;
-static atomic_uint          g_decode_counts[CAPTURE_DECODE_INVALID + 1u];
-static atomic_uint          g_prefix_ready;
-static uint32_t             g_prefix[16];
-static uint32_t             g_prefix_count;
-static uint32_t             g_prefix_words;
-static uint32_t             g_tail[16];
-static uint32_t             g_tail_count;
-static uint32_t             g_crs_high_samples;
-static uint32_t             g_rxd_set_bits;
-static capture_raw_t        g_first_meta;
-static capture_signal_run_t g_signal_runs[CAPTURE_TRACE_MAX_RUNS];
-static size_t               g_signal_run_count;
+static uint32_t               g_worker_stack[1024] __attribute__((aligned(8)));
+static atomic_int             g_worker_status;
+static atomic_uint            g_decode_counts[CAPTURE_DECODE_INVALID + 1u];
+static atomic_uint            g_prefix_ready;
+static uint32_t               g_prefix[16];
+static uint32_t               g_prefix_count;
+static uint32_t               g_prefix_words;
+static uint32_t               g_tail[16];
+static uint32_t               g_tail_count;
+static uint32_t               g_crs_high_samples;
+static uint32_t               g_rxd_set_bits;
+static capture_raw_t          g_first_meta;
+static capture_signal_run_t   g_signal_runs[CAPTURE_TRACE_MAX_RUNS];
+static size_t                 g_signal_run_count;
+static capture_test_tracker_t g_test_tracker;
 
 static void capture_app_worker(INT code, void * p_exinf);
 static bool capture_app_phy(uint8_t * p_address);
@@ -37,39 +39,100 @@ static bool capture_app_link(uint8_t address, uint16_t * p_bmsr,
                              uint16_t * p_special);
 static void capture_app_process(const capture_raw_t * p_raw);
 static void capture_app_report(uint32_t delivered);
+static void capture_app_report_tests(void);
+
+/** @brief Report only marked batches; background traffic cannot inflate them.
+ */
+static void
+capture_app_report_tests (void)
+{
+    uint32_t                   index = 0u;
+    const capture_test_run_t * p_run = NULL;
+
+    for (index = 0u; CAPTURE_TEST_RUNS > index; index++)
+    {
+        p_run = &g_test_tracker.runs[index];
+        if (p_run->b_used)
+        {
+            printf("TEST run=%" PRIu32 " src=%u.%u.%u.%u unique=%" PRIu32
+                   " expected=%" PRIu32 " missing=%" PRIu32 "\n",
+                   p_run->run_id, p_run->source_ip[0], p_run->source_ip[1],
+                   p_run->source_ip[2], p_run->source_ip[3], p_run->unique,
+                   p_run->expected, p_run->expected - p_run->unique);
+            printf(
+                "TEST run=%" PRIu32 " duplicates=%" PRIu32 " reordered=%" PRIu32
+                " conflicts=%" PRIu32 " complete=%u\n",
+                p_run->run_id, p_run->duplicates, p_run->reordered,
+                p_run->conflicts,
+                ((p_run->unique == p_run->expected) && (0u == p_run->conflicts))
+                    ? 1u
+                    : 0u);
+        }
+    }
+    printf("TEST rejected=%" PRIu32 " run_capacity_drops=%" PRIu32 "\n",
+           g_test_tracker.rejected, g_test_tracker.run_capacity_drops);
+}
 
 /** @brief Advertise only 10BASE-T after checking the actual PHY identity. */
 static bool
 capture_app_phy (uint8_t * p_address)
 {
     uint32_t             address      = 0u;
+    uint32_t             attempt      = 0u;
+    uint32_t             responses    = 0u;
     mdio_phy_id_t        identity     = {0};
     capture_phy_result_t result       = {0};
     bool                 b_configured = false;
 
     mdio_phy_init();
-    for (address = 0u; 32u > address; address++)
+    /* A one-shot discovery failure must not hide startup readiness. These
+     * bounded retries only read IDs; never configure an unidentified device.
+     */
+    for (attempt = 1u; 5u >= attempt; attempt++)
     {
-        if (mdio_phy_identify((uint8_t) address, &identity)
-            && identity.b_is_lan8720)
+        responses = 0u;
+        for (address = 0u; 32u > address; address++)
         {
-            *p_address = (uint8_t) address;
-            printf("PHY addr=%" PRIu32 " id1=%04x id2=%04x\n", address,
-                   identity.id1, identity.id2);
-            b_configured = capture_phy_configure(*p_address, &result);
-            printf("PHY ANAR before_ack=%u before=%04x write_half_us=10\n",
-                   result.b_anar_before_read ? 1u : 0u, result.anar_before);
-            printf("PHY config stage=%s ANAR_ack=%u ANAR=%04x "
-                   "BMCR_ack=%u BMCR=%04x\n",
-                   result.p_stage, result.b_anar_read ? 1u : 0u, result.anar,
-                   result.b_bmcr_read ? 1u : 0u, result.bmcr);
-            if (b_configured)
+            if (mdio_phy_identify((uint8_t) address, &identity))
             {
-                printf("PHY 10 Mbps advertisement verified.\n");
+                responses++;
+                printf("PHY scan addr=%" PRIu32
+                       " id1=%04x id2=%04x LAN8720=%u\n",
+                       address, identity.id1, identity.id2,
+                       identity.b_is_lan8720 ? 1u : 0u);
+                if (identity.b_is_lan8720)
+                {
+                    *p_address = (uint8_t) address;
+                    printf("PHY addr=%" PRIu32 " id1=%04x id2=%04x\n", address,
+                           identity.id1, identity.id2);
+                    b_configured = capture_phy_configure(*p_address, &result);
+                    printf(
+                        "PHY ANAR before_ack=%u before=%04x write_half_us=10\n",
+                        result.b_anar_before_read ? 1u : 0u,
+                        result.anar_before);
+                    printf("PHY config stage=%s ANAR_ack=%u ANAR=%04x "
+                           "BMCR_ack=%u BMCR=%04x\n",
+                           result.p_stage, result.b_anar_read ? 1u : 0u,
+                           result.anar, result.b_bmcr_read ? 1u : 0u,
+                           result.bmcr);
+                    if (b_configured)
+                    {
+                        printf("PHY 10 Mbps advertisement verified.\n");
+                    }
+                    return b_configured;
+                }
             }
-            return b_configured;
+        }
+        printf("PHY discovery attempt=%" PRIu32 "/5 complete_id_reads=%" PRIu32
+               " matching=0\n",
+               attempt, responses);
+        if (5u > attempt)
+        {
+            (void) tk_dly_tsk(250u);
         }
     }
+    printf("PHY discovery failed: no LAN8720 identity; configuration not "
+           "attempted.\n");
     return false;
 }
 
@@ -223,6 +286,7 @@ capture_app_report (uint32_t delivered)
            hw.dma_full, hw.fifo_stall, hw.pauses, hw.armed_while_high,
            hw.max_rearm_us, pipe.pool_drops, pipe.queue_drops,
            pipe.ownership_errors, pipe.loss_generation);
+    capture_app_report_tests();
 }
 
 void
@@ -242,7 +306,8 @@ capture_app_task (INT start_code, void * p_exinf)
 
     (void) start_code;
     (void) p_exinf;
-    printf("Pico 2 W micro T-Kernel v0.5-dev6 capture.\n");
+    printf("Pico 2 W micro T-Kernel v0.5-dev7-r1 capture.\n");
+    capture_test_init(&g_test_tracker);
     printf("Core 1: GP4/5/6 PIO+DMA RX; Core 0: MDIO/USB/consumer.\n");
     printf("10 Mbps only, clk_sys=%" PRIu32 " Hz; no traffic transmitted.\n",
            clock_get_hz(clk_sys));
@@ -288,6 +353,9 @@ capture_app_task (INT start_code, void * p_exinf)
         if (NULL != p_frame)
         {
             delivered++;
+            /* Observe while this consumer owns the FCS-verified frame. */
+            (void) capture_test_observe(&g_test_tracker, p_frame->data,
+                                        p_frame->length);
             if (1u == delivered)
             {
                 printf("FIRST frame seq=%" PRIu32

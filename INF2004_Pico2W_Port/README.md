@@ -2,7 +2,7 @@
 
 Four build profiles target Pico 2 W / RP2350 Arm Secure: SDK diagnostic,
 single-core micro T-Kernel v0.3-r1, dual-core v0.4-dev2 acceptance, and
-**v0.5-dev6 packet capture**.
+**v0.5-dev7-r1 packet capture/test accounting**.
 
 The supplied board logs pass the v0.3 single-core checks and the v0.4 SMP
 functional suite, including cross-core mailbox/alarm, mutex priority inheritance,
@@ -10,8 +10,8 @@ shared counters and scheduler audits. LAN8720 identifies as 0007/c0f1 at address
 **Dev6 now has functional board capture evidence:343 CRC-valid frames delivered
 from Core1 to Core0**, with zero full/stall/DMA-disabled or ownership faults.
 Three start-marker rejections,one CRC rejection and72 raw-buffer pauses remain
-in the supplied run. Unique test-packet accounting and capture percentage are
-not qualified; the100-packet sender batch is mixed with background traffic.
+in the supplied run. Dev7 adds per-run unique test-packet counting; its first100/100 board batch now passes; two repeats remain.
+Capture percentage/capacity remain unqualified.
 Known-working v0.3 and v0.4 UF2/ELF fallbacks are preserved under build/kernel
 and build/smp. Longer stress, repeated boots and fault injection remain pending.
 
@@ -125,7 +125,7 @@ the kernel port and PHY timing need measured evidence first.
 | v0.2 PHY | Raw LAN8720 IDs board-confirmed; host reads/writes pass | Capture configuration/link readbacks on board. |
 | v0.3 kernel | Nine functional checks board-pass | Repeat boots, soak and fault injection. |
 | v0.4 SMP | Complete supplied functional suite passes, failures=0 | Longer stress, stack peaks, migration/reclaim and combined load. |
-| v0.5 capture | Functional board capture and Core1-to-Core0 delivery pass:343 CRC-valid frames | Per-run unique packet accounting, burst/overload tests, gaps and independent offered-frame loss measurement. |
+| v0.5 capture | Functional board capture and Core1-to-Core0 delivery pass:343 CRC-valid frames | Dev7-r1 first100/100 batch passes; two baseline repeats pending; burst/overload/gap and independent offered-frame loss measurements follow. |
 | v0.6+ application | Analysis/storage/health/alarm remain placeholders | Integrate and qualify against the roadmap below. |
 
 These versions are engineering milestones, not released/tagged software.
@@ -201,13 +201,31 @@ they must each be checked with the combined system.
 
 ### Immediate next task
 
-Run `build/capture/pico2w_capture_v05.uf2` manually and save the complete
-0.5-dev4 startup, pool/queue self-check, raw PHY status, first raw/frame and
-several CAP summaries. Begin with a connected auto-negotiating peer and low-rate
-known traffic visible at this PHY. Follow the [capture board procedure](testing/README.md#v05-capture-board-procedure).
-Do not qualify >=99% from the firmware's counters alone. Restore
-`build/smp/known-working-v04-dev2.uf2` if needed.
+Run `build/capture/pico2w_capture_v05.uf2` manually and require the v0.5-dev7-r1
+banner. Follow the [100-packet baseline procedure](testing/traffic/README.md#4-baseline-verify100-unique-packets-before-testing-limits).
+Match the sender's fresh run ID to TEST output: unique=100, expected=100,
+missing=0 and complete=1, with no duplicates, conflicts or rejected candidates.
+Repeat three batches before increasing rate or payload size. This establishes
+baseline delivery, not maximum capacity or a general >=99% capture claim.
+Preserve the dev6 functional fallback in `build/capture/`.
 
 Kernel, adapter and test sources are currently local/ignored by this checkout's
 Git configuration. Their presence here does not mean they are committed or
 available in a fresh clone; no force-adding, staging or commits were performed.
+
+Dev7-r1 adds bounded PHY discovery retries and diagnostics after the first dev7
+board boot failed before identifying a PHY. The earlier discovery root cause remains unknown; see the traffic procedure for the next steps.
+
+## Dev7-r1 first marked batch result
+
+Dev7-r1 marked baseline batch1 PASS: run3829278217, source169.254.193.73,
+100 unique/100 expected, missing/duplicates/reordered/conflicts/rejected/capacity0,
+complete1. Matching sender JSON:100 planned/submitted,completed,64-byte UDP payload,
+10fps limit,9.9582549s. UTC2026-11-08T15:40:46.728937 (=Nov9 JST).
+Receiver completion at82.845632s, persists83.945632s and84.965632s.
+During marked batch pauses64/high_arm3/no_sfd3/loss_gen67 unchanged; after completion
+pauses66/loss_gen69. Final raw361,crc_ok/delivered358,bad_crc0,full/stall/DMA-disabled/
+pool/queue/owner0,max_rearm1734us. This is one successful low-rate batch, not maximum
+capacity/general capture percentage. Need two more fresh-ID100/100 batches at10fps
+before rate/size stress. Logs saved testing/capture/logs/v05_dev7_r1_batch1_100_pass.txt
+and matching v05_dev7_r1_batch1_sender.json. No source changes required by this result.
