@@ -4,8 +4,9 @@ v0.4-dev2 now has a supplied passing board log: all listed kernel/SMP checks
 PASS, failures=0, worker_core=1, counter=10000, mutex_counter=2000 and
 wrong_core_ticks=0. This is functional board evidence, not a long stress test.
 
-v0.5-dev4 adds the capture subsystem. It builds and its host tests pass, but
-real packet reception and the capture percentage still need board evidence.
+v0.5-dev6 adds the capture subsystem. It builds and its host tests pass, but
+real CRC-valid packet reception now has board evidence; capture percentage
+still needs independent measurement.
 The code blocks below are **excerpts of the implemented source**, not separate
 files to paste together. Each names its source and function.
 
@@ -272,8 +273,9 @@ reduce CPU work. This is a timing assumption, not a recovery method for
 arbitrary clock drift or 100 Mbps traffic.
 
 The **preamble** is Ethernet's repeating synchronization pattern. The
-**SFD**, Start Frame Delimiter, ends it. The decoder requires a run of `01`
-before the `11` delimiter dibit. It then packs four dibits into each byte,
+**SFD**, Start Frame Delimiter, ends it. At10Mbps the PHY suppresses the
+preamble; the decoder requires the complete SFD: three `01` dibits followed by
+one `11`. Additional preamble is optional. It then packs four dibits into each byte,
 least-significant pair first. It bounds every output write.
 
 The original reference receiver's oversampling/run-length approach informed
@@ -418,7 +420,7 @@ frame bytes are printed, followed by one-second summaries.
 ## 14. What is tested, and what is still pending
 
 Host tests compile the production MDIO, decoder and pipe implementations.
-They check wire read/write fields, timing guards and read ACK; 1320 generated
+They check wire read/write fields, timing guards and read ACK; 2640 generated
 phase/tail/size cases; known CRC; malformed/oversized/short frames; bounded
 ownership/exhaustion and early remote reuse. The pool/queue host model is not
 the real kernel, and generated traces are not independent electrical evidence.
@@ -437,41 +439,119 @@ The next acceptance step is the manual board procedure in `testing/README.md`.
 Do not mark v0.5 qualified until actual traffic is received with matching frame
 bytes/checksums and capture losses are measured against an independent sender.
 
-## Current PHY and acquisition bring-up
+## Dev4 board finding and dev5 correction
 
-Dev3 board verifies ANAR0061/BMCR1000, link10Mbps full duplex and Core1 startup.
-Slower MDIO writes are followed by successful board readbacks; no independent
-analog waveform measurement establishes the earlier electrical cause.
+Dev4 confirms PIO selftest15, PHY/link10Mbps and live EOF interrupts. First raw
+recording322 words is undamaged, but no SFD was decoded. Subsequent recordings
+stall; attached log ends raw362/stall361 with no valid frames.
 
-Acquisition is not working yet: all108 recordings hit raw capacity,107 stalls,
-no valid frames. The first16 words24924924 encode CRS1/RXD00 for3.2us; the rest
-of that raw block was not in the old console prefix. All decoder counters0
-reflect rejection of damaged buffers before decoding, not successful decoding.
-
-Dev4 performs two known input-pattern tests, an end-detector test and a Core1
-interrupt-route test at startup. These use only temporary INPUT overrides and
-restore normal inputs before DMA acquisition. In capture_hw.c the test uses:
+Found source defect in capture_hw.c: stopping clears DMA EN for RP2350-E5;
+old rearming triggered a transfer without restoring EN, so later transfers
+were ignored. Dev5 capture_hw_arm now includes this real code before its trigger:
 
 ```c
-        gpio_set_inover(CAPTURE_PIN_BASE, GPIO_OVERRIDE_LOW);
-        busy_wait_us_32(5u);
+    hw_set_bits(&dma_channel_hw_addr((uint32_t) g_dma)->al1_ctrl,
+                DMA_CH0_CTRL_TRIG_EN_BITS);
 ```
 
-An input override changes what internal peripherals see; it does not drive
-voltage onto the external wire. Expected selftest bits1+2+4+8 sum15. Failed tests
-stop capture and release resources. A selftest pass does not establish receipt
-of an Ethernet frame. See Raspberry Pi SDK hardware GPIO/PIO APIs for input
-overrides and state-machine controls.
+EN is the enable bit. AL1_CTRL is the control alias that does not itself start
+a transfer. After restoring EN, TRANS_COUNT is written through its trigger
+alias. Hardware stop still clears EN before abort. disabled_stops measures an
+unexpected disabled channel at stop entry, before that intentional clear.
+Expected value is zero. This source correction still needs a board test.
 
-New first-buffer diagnostics retain copied prefix/tail, full-block signal
-activity, program counter (current instruction position), IRQ routing/status,
-GPIO levels and whether PIO or DMA caused the stop. They never retain a raw
-pointer after release. Raw length uses a checked, stable DMA write pointer,
-independently of the pre-abort transfer-counter snapshot. Full/stalled or
-invalid-pointer recordings remain damaged. A host test covers pointer bounds.
+## Dev5 framing result and dev6
 
-The host instruction model assembles the real PIO source and checks relocation,
-short tail pulses, sustained low and packing. This checks modeled instruction
-semantics; hardware self-tests and the actual receive failure need a board run.
-Follow testing/README.md and save all new PIO and RAW lines. No CRC-valid frame
-or capture percentage is currently qualified.
+Dev5 board removes the old DMA stalls. Its first RXD trace starts0:368,1:30,3:20.
+The [LAN8720 datasheet, Table2-1/page8](https://ww1.microchip.com/downloads/en/DeviceDoc/00002165B.pdf)
+explains that at10Mbps RXD is held low until SFD. SFD is the eight-bit start
+marker D5, sent as01/01/01/11. The old decoder required eight01 dibits; only
+three are needed for the complete marker. That explains no_sfd on every record.
+
+In capture_decode.c the implemented requirement is now:
+
+```c
+#define CAPTURE_SFD_PREFIX_DIBITS 3u
+```
+
+The following11 dibit finishes the marker. If that value repeats into frame
+data (3:20), exactly one is consumed as marker; the remaining data is preserved.
+Length and CRC checks remain unchanged. A valid host frame with exact observed
+start and first byte33 failed before this fix and now passes. Full-preamble and
+SFD-only host fixtures total2640; incomplete prefixes and bad CRC still reject.
+Dev6 now has a supplied positive board run:343 CRC-valid frames delivered.
+Unique test-packet accounting and capture percentage remain pending.
+
+## Reading your console in plain English
+
+Think of the receiver as a parcel line: PIO observes incoming symbols, DMA is
+an automatic carrier that puts them in storage, raw buffers are two waiting
+trays, the decoder reads the address label, and CRC checks for damaged contents.
+The queue passes checked parcels to the other core.
+
+The old DMA bug turned the carrier off after each parcel but did not turn it
+back on. Incoming symbols filled its small waiting tray (FIFO) and stalled.
+The dev5 log's disabled_stops0/stall0 confirms that pattern is gone in this run.
+Now the carrier works, but the label reader expects a longer greeting than the
+PHY supplies. Dev6 corrects that expectation; it does not skip the integrity check.
+
+| Console field | Meaning in this run |
+| --- | --- |
+| PHY ID0007/c0f1 | Management reads identify the expected LAN8720 model/revision. |
+| ANAR0061 / ready1 | The10Mbps advertisement was read back; the cable peers agreed a usable10Mbps link. |
+| worker_status1 | Capture worker initialization succeeded; rising raw/eof counters demonstrate later progress. |
+| time9235750us | Hardware time since boot, about9.24 seconds; not packet latency. |
+| PIO selftest15 | All four startup checks passed;15 is a bit mask, not a packet count. |
+| wordfffffffc | Known synthetic sample pattern from the startup test; not a memory address or an error. |
+| eof_irqs73 | The frame-end detector generated73 serviced interrupts. |
+| raw73 |73 recordings were completed; not necessarily73 unique offered Ethernet frames. |
+| disabled_stops0 | No completion found DMA unexpectedly switched off. |
+| full0 / stall0 | No raw-capacity or PIO FIFO-stall fault observed in these recordings. |
+| no_sfd73 | Software rejected every recording at start recognition; this does not prove the sender omitted its marker. |
+| crc_ok0 / delivered0 | No frame passed CRC and reached the consumer yet. |
+| short/bad_crc/large/invalid0 | No such errors reported; CRC was not reached for no_sfd recordings. Zero bad_crc is not a CRC pass. |
+| pauses24 |24 times no free raw tray was available; capture waited for a release. New traffic can be missed during that gap. |
+| high_arm5 | Five starts happened while CRS_DV was already high; possible mid-frame starts. |
+| max_rearm_us1412 | Longest measured stop-to-restart interval1.412ms, including waiting for storage; excludes latency before the ISR. |
+| pool_drop0 / queue_drop0 | No decoded-frame pool/queue exhaustion observed; no valid frames were sent through the queue yet. |
+| owner_error0 | No invalid buffer ownership transition detected. |
+| loss_gen100 | A changing known/suspected discontinuity marker, not100 proven lost packets. |
+
+Raw storage is signal history, not decoded Ethernet bytes.566 words contain
+5660 snapshots of three pins, sampled every20ns (113.2us of recording). crs_high
+counts snapshots showing activity; rxd_set_bits counts ones across oversampled
+data wires, not packet bits. Prefix24924924 means CRS1/RXD00, expected before
+SFD in this PHY mode. Zero tail means idle after the packet.
+
+end_pc5 says the small PIO program reached its end waiting loop. irq/inte/ints
+are hexadecimal interrupt-state snapshots for debugging, not error numbers.
+stop0 means the frame-end detector stopped acquisition; stop1 means DMA did.
+DMAwords566 and remaining6434 describe a7000-word destination. They are sampled
+at different stages, so exact equality is not guaranteed in general. damaged0
+means no capture-buffer fault detected, not that a packet passed framing/CRC.
+
+The trace is also signal history.0:368 means data00 for368 samples (7.36us).
+1:30 means01 for30 samples, or three dibits.3:20 means11 for two dibits; the
+first completes SFD and the second begins frame data. These values explain the
+software's start-marker mismatch without requiring guesses about wiring.
+
+## Dev6 first functional board capture checkpoint
+
+The latest supplied log ends with347 raw recordings,343 CRC-valid frames and
+343 delivered frames. Three recordings lacked a recognized start marker; one
+failed CRC. Full/stall/DMA-disabled/ownership/pool/queue errors stay0. Raw-buffer
+pauses72 and high-arm9 remain possible capture-gap concerns. The first frame
+seq1,len122/wire126 passed CRC before the test batch; background frames can
+arrive immediately after the receiver starts.
+
+Starting the sender a few seconds later is fine. The receiver keeps listening;
+there is no startup-only receive window. The sender report records100 successful
+OS submissions at10fps. Later counters rise at approximately that rate with no
+new errors or pauses, consistent with the batch. The present firmware does not
+match its unique runID/sequence, so it cannot prove all100 were captured.
+
+This confirms the DMA restart and SFD corrections on real hardware. The earlier
+log-reader table describes the failing dev5 run; its zero-CRC/zero-queue-use
+statements are historical, not the current dev6 result. CRC-valid delivery now
+works. Capture-rate qualification still needs unique test matching and independent
+offered-frame evidence, plus investigation of burst-related pauses.

@@ -16,18 +16,20 @@
 #include "capture_phy.h"
 #include "mdio_phy.h"
 
-static uint32_t      g_worker_stack[1024] __attribute__((aligned(8)));
-static atomic_int    g_worker_status;
-static atomic_uint   g_decode_counts[CAPTURE_DECODE_INVALID + 1u];
-static atomic_uint   g_prefix_ready;
-static uint32_t      g_prefix[16];
-static uint32_t      g_prefix_count;
-static uint32_t      g_prefix_words;
-static uint32_t      g_tail[16];
-static uint32_t      g_tail_count;
-static uint32_t      g_crs_high_samples;
-static uint32_t      g_rxd_set_bits;
-static capture_raw_t g_first_meta;
+static uint32_t             g_worker_stack[1024] __attribute__((aligned(8)));
+static atomic_int           g_worker_status;
+static atomic_uint          g_decode_counts[CAPTURE_DECODE_INVALID + 1u];
+static atomic_uint          g_prefix_ready;
+static uint32_t             g_prefix[16];
+static uint32_t             g_prefix_count;
+static uint32_t             g_prefix_words;
+static uint32_t             g_tail[16];
+static uint32_t             g_tail_count;
+static uint32_t             g_crs_high_samples;
+static uint32_t             g_rxd_set_bits;
+static capture_raw_t        g_first_meta;
+static capture_signal_run_t g_signal_runs[CAPTURE_TRACE_MAX_RUNS];
+static size_t               g_signal_run_count;
 
 static void capture_app_worker(INT code, void * p_exinf);
 static bool capture_app_phy(uint8_t * p_address);
@@ -106,6 +108,9 @@ capture_app_process (const capture_raw_t * p_raw)
         g_first_meta.p_words =
             NULL; /* Metadata copy never retains raw storage. */
         g_tail_count = g_prefix_count;
+        g_signal_run_count =
+            capture_decode_trace(p_raw->p_words, p_raw->word_count,
+                                 g_signal_runs, CAPTURE_TRACE_MAX_RUNS);
         for (index = 0u; g_tail_count > index; index++)
         {
             g_tail[index] =
@@ -202,6 +207,7 @@ capture_app_report (uint32_t delivered)
            " end_pc=%" PRIu32 " irq=%08" PRIx32 " eof_irqs=%" PRIu32 "\n",
            hw.self_test_flags, hw.self_test_word, hw.self_test_end_pc,
            hw.self_test_irq, hw.eof_interrupts);
+    printf("DMA disabled_stops=%" PRIu32 "\n", hw.dma_disabled_stops);
     printf("CAP raw=%" PRIu32 " crc_ok=%u delivered=%" PRIu32
            " no_sfd=%u short=%u bad_crc=%u large=%u invalid=%u\n",
            hw.completed, atomic_load(&g_decode_counts[CAPTURE_DECODE_OK]),
@@ -236,7 +242,7 @@ capture_app_task (INT start_code, void * p_exinf)
 
     (void) start_code;
     (void) p_exinf;
-    printf("Pico 2 W micro T-Kernel v0.5-dev4 capture.\n");
+    printf("Pico 2 W micro T-Kernel v0.5-dev6 capture.\n");
     printf("Core 1: GP4/5/6 PIO+DMA RX; Core 0: MDIO/USB/consumer.\n");
     printf("10 Mbps only, clk_sys=%" PRIu32 " Hz; no traffic transmitted.\n",
            clock_get_hz(clk_sys));
@@ -329,6 +335,17 @@ capture_app_task (INT start_code, void * p_exinf)
                    g_first_meta.irq_enable, g_first_meta.irq_status,
                    g_first_meta.pin_levels, g_first_meta.b_damaged ? 1u : 0u);
             b_prefix_printed = true;
+            printf("RAW RXD runs (value:samples, 10 samples per dibit):\n");
+            for (index = 0u; g_signal_run_count > index; index++)
+            {
+                printf("%" PRIu32 ":%" PRIu32 " ", g_signal_runs[index].value,
+                       g_signal_runs[index].samples);
+                if (7u == (index % 8u))
+                {
+                    printf("\n");
+                }
+            }
+            printf("\n");
             printf("RAW stop=%" PRIu32 " dma_remaining=%" PRIu32
                    " dma_words=%" PRIu32 " (stop: 0=PIO 1=DMA)\n",
                    g_first_meta.stop_reason, g_first_meta.dma_remaining,

@@ -10,6 +10,18 @@
 #define CAPTURE_WIRE_MAX         1536u
 #define CAPTURE_DATA_SIZE        1544u
 #define CAPTURE_SAMPLES_PER_WORD 10u
+#define CAPTURE_TRACE_MAX_RUNS   32u
+
+/** @brief One unchanged RXD dibit and its duration in 20 ns samples. */
+typedef struct
+{
+    uint32_t value;
+    uint32_t samples;
+} capture_signal_run_t;
+
+/** @brief Copy a bounded initial signal trace, without accepting a frame. */
+size_t capture_decode_trace(const uint32_t * p_words, size_t word_count,
+                            capture_signal_run_t * p_runs, size_t capacity);
 
 typedef enum
 {

@@ -10,7 +10,14 @@
 
 #include <stdbool.h> /* Decoder phase flags. */
 
-#define CAPTURE_CRS_MASK 0x24924924u
+#define CAPTURE_CRS_MASK          0x24924924u
+#define CAPTURE_SFD_PREFIX_DIBITS 3u
+
+/* LAN8720 at 10 Mbps holds RXD low during preamble and outputs the SFD.
+ * D5 arrives least-significant pair first: 01,01,01,11. Require the whole
+ * six-bit prefix, not additional preamble bytes that the PHY suppresses.
+ * A longer preamble is also accepted; length and FCS remain mandatory.
+ */
 
 /* Four bits per lookup reduces CRC work without a 1 KiB byte table. */
 static const uint32_t g_crc_table[16] = {
@@ -24,6 +31,36 @@ static size_t   capture_end(const uint32_t * p_words, size_t count);
 static size_t   capture_run(const uint32_t * p_words, size_t start, size_t end,
                             uint32_t value);
 static bool     capture_fcs(const uint8_t * p_data, size_t length);
+
+size_t
+capture_decode_trace (const uint32_t * p_words, size_t word_count,
+                      capture_signal_run_t * p_runs, size_t capacity)
+{
+    size_t   position = 0u;
+    size_t   count    = 0u;
+    size_t   samples  = 0u;
+    uint32_t value    = 0u;
+
+    if ((NULL == p_words) || (NULL == p_runs) || (0u == word_count)
+        || (7000u < word_count))
+    {
+        return 0u;
+    }
+    if (CAPTURE_TRACE_MAX_RUNS < capacity)
+    {
+        capacity = CAPTURE_TRACE_MAX_RUNS;
+    }
+    while ((word_count * 10u > position) && (capacity > count))
+    {
+        value   = capture_sample(p_words, position);
+        samples = capture_run(p_words, position, word_count * 10u, value);
+        p_runs[count].value   = value;
+        p_runs[count].samples = (uint32_t) samples;
+        count++;
+        position += samples;
+    }
+    return count;
+}
 
 uint32_t
 capture_crc32 (const uint8_t * p_data, size_t length)
@@ -146,7 +183,8 @@ capture_decode (const uint32_t * p_words, size_t word_count,
         run   = capture_run(p_words, position, end, value);
         position += run;
         repeats = (run + 5u) / 10u;
-        if ((!b_data) && (1u == value) && (8u <= repeats))
+        if ((!b_data) && (1u == value)
+            && (CAPTURE_SFD_PREFIX_DIBITS <= repeats))
         {
             b_preamble = true;
         }

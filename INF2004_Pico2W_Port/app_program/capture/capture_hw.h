@@ -59,6 +59,7 @@ typedef struct
     uint32_t self_test_end_pc;
     uint32_t self_test_irq;
     uint32_t eof_interrupts;
+    uint32_t dma_disabled_stops;
 } capture_hw_stats_t;
 
 /** @brief All four ownership APIs execute only on pinned Core 1. */

@@ -2,14 +2,16 @@
 
 Four build profiles target Pico 2 W / RP2350 Arm Secure: SDK diagnostic,
 single-core micro T-Kernel v0.3-r1, dual-core v0.4-dev2 acceptance, and
-**v0.5-dev4 packet capture**.
+**v0.5-dev6 packet capture**.
 
 The supplied board logs pass the v0.3 single-core checks and the v0.4 SMP
 functional suite, including cross-core mailbox/alarm, mutex priority inheritance,
 shared counters and scheduler audits. LAN8720 identifies as 0007/c0f1 at address 1.
-Dev3 board verifies PHY configuration, negotiated10Mbps and receiver startup.
-All108 raw recordings reach capacity; no valid frames yet. Dev4 adds PIO
-self-tests and raw-buffer diagnostics; the acquisition fault remains unresolved.
+**Dev6 now has functional board capture evidence:343 CRC-valid frames delivered
+from Core1 to Core0**, with zero full/stall/DMA-disabled or ownership faults.
+Three start-marker rejections,one CRC rejection and72 raw-buffer pauses remain
+in the supplied run. Unique test-packet accounting and capture percentage are
+not qualified; the100-packet sender batch is mixed with background traffic.
 Known-working v0.3 and v0.4 UF2/ELF fallbacks are preserved under build/kernel
 and build/smp. Longer stress, repeated boots and fault injection remain pending.
 
@@ -17,6 +19,11 @@ The [capture walkthrough](app_program/capture/README.md) explains the new
 implementation using actual source excerpts, plain definitions and ownership
 examples. The [board procedure](testing/README.md#v05-capture-board-procedure)
 describes its next acceptance checks.
+
+For the direct Windows PC Ethernet connection, the
+[traffic test guide](testing/traffic/README.md) provides a finite UDP broadcast
+sender. Start with dev4 PIO self-tests, then a low-rate known batch. GOOSE/SV
+publishers are not required to establish initial frame acquisition.
 
 ```text
 INF2004_Pico2W_Port/
@@ -118,7 +125,7 @@ the kernel port and PHY timing need measured evidence first.
 | v0.2 PHY | Raw LAN8720 IDs board-confirmed; host reads/writes pass | Capture configuration/link readbacks on board. |
 | v0.3 kernel | Nine functional checks board-pass | Repeat boots, soak and fault injection. |
 | v0.4 SMP | Complete supplied functional suite passes, failures=0 | Longer stress, stack peaks, migration/reclaim and combined load. |
-| v0.5 capture | PIO/DMA, decoder/CRC, pool/queue and loss telemetry implemented; host tests/build pass | Real traffic, timing, independent offered-frame loss measurement. |
+| v0.5 capture | Functional board capture and Core1-to-Core0 delivery pass:343 CRC-valid frames | Per-run unique packet accounting, burst/overload tests, gaps and independent offered-frame loss measurement. |
 | v0.6+ application | Analysis/storage/health/alarm remain placeholders | Integrate and qualify against the roadmap below. |
 
 These versions are engineering milestones, not released/tagged software.
@@ -139,7 +146,7 @@ firmware measurements do not qualify this port.
 | **v0.2 — PHY identification** | Capture: finish MDIO clock timing, most-significant-bit-first fields, bounded bit counts, released turnaround, ACK handling and read-register API. Scan addresses 0–31; read LAN8720 ID registers. Keep initial exercise read-only. | Build current learner code; log repeatable raw IDs and ACK/no-device behavior. Verify actual module, power and clock arrangement before selecting a receive configuration. No shifted-ID workaround. |
 | **v0.3 — RP2350 single-core kernel** | Recover the exact course RP2040 foundation as reference without restructuring Git history. Add the RP2350 Arm platform/build configuration, startup/vector table, linker and boot metadata, exception/context switching, interrupt priorities/masking, tick timer, monotonic time and fault reporting. Reconcile SDK runtime ownership. | Boot on one core; demonstrate two preempting tasks, delay/wakeup, timeout, semaphore/mailbox operations and ISR-to-task wakeup. Check register/stack preservation and fault output. Use software floating point until FPU context preservation is qualified. |
 | **v0.4 — micro T-Kernel SMP** | Bring up Core 1 and its stack/vectors; implement inter-core reschedule signalling, kernel locks/memory ordering, core affinity and interrupt ownership. Audit SIO FIFO/spinlock use, SDK coexistence and heap synchronization. | Board logs demonstrate simultaneous tasks on both cores, cross-core wakeups, priority/preemption and sustained contention without lost messages, deadlocks or corrupted state. Qualify floating-point context if enabled. Dual LED loops alone are insufficient. |
-| **v0.5 — Capture acquisition and handoff** | S2 implemented in its own SMP profile: 10 Mbps PHY configuration/readback, three-pin PIO sampling and qualified low-tail detector, DMA double raw buffers, bounded decoder/FCS, kernel frame pool and non-waiting pointer queue, timestamps and loss generation. | Host decoder/ownership tests pass; real-kernel pool/queue self-check awaits board execution. Compare real bytes/FCS and raw timing; test DMA overrun and exhaustion, then measure sustained/burst capture against independent offered-frame counts. |
+| **v0.5 — Capture acquisition and handoff** | S2 implemented in its own SMP profile: 10 Mbps PHY configuration/readback, three-pin PIO sampling and qualified low-tail detector, DMA double raw buffers, bounded decoder/FCS, kernel frame pool and non-waiting pointer queue, timestamps and loss generation. | Host tests and real-kernel pool/queue board checks pass;343 CRC-valid frames delivered. Compare real bytes/FCS and raw timing; test DMA overrun and exhaustion, then measure sustained/burst capture against independent offered-frame counts. |
 | **v0.6 — Analysis parity** | S3: port parsing, per-stream state, features, generated RF models and shadow rules. Preserve four-frame windows/stride two, 128-sample SV history, 52 GOOSE/72 SV inputs, four GOOSE/one SV streams and all four raw evidence frames. Reconcile shared headers/APIs. | Host replay matches reference features/model outputs; malformed frames and loss/restart paths are checked. Target build and timed board replay establish inference cost and stack/RAM use. Confirm actual SV payload schema before claiming publisher compatibility. |
 | **v0.7 — Detection, alarm and supervision** | S3 owns incident state; S4 provides bounded evidence storage and one watchdog supervisor; S5 drives the alarm. Either GOOSE or SV alone can create an incident. Add copied output queues, progress telemetry, evidence exhaustion policy and arrival-to-alarm timestamps. | GOOSE-only, SV-only and mixed cases activate the LED. Full/slow output sinks and long attacks do not stop detection. Inject a software task stall and distinguish healthy idle. Measure complete latency including window collection. |
 | **v0.8 — SD incident records** | S1: SPI/FatFs, bounded record queue, incident/evidence serialization, durable ACK matched to slot and incident ID, card-removal/full/error handling. Confirm Pico 2 W/carrier pins before enabling I/O. | Bench tests cover slow/full/removed card and ACK mismatches while detection runs. Accept FAT16/32 only; create exclusive new files under `IECLOG`, preserving all existing NOOBS files. No formatting or overwriting existing files. |

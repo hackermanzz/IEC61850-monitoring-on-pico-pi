@@ -79,6 +79,7 @@ static atomic_uint g_self_test_word;
 static atomic_uint g_self_test_end_pc;
 static atomic_uint g_self_test_irq;
 static atomic_uint g_eof_interrupts;
+static atomic_uint g_dma_disabled_stops;
 
 static void capture_hw_arm(void);
 static void capture_hw_finish(bool b_full);
@@ -206,6 +207,11 @@ capture_hw_arm (void)
     dma_hw->ints1  = 1u << (uint32_t) g_dma;
     dma_channel_set_write_addr((uint32_t) g_dma, g_slots[g_active].words,
                                false);
+    /* Stop clears EN for RP2350-E5. A trigger does not restore EN: enable
+     * through the NON-triggering control alias before starting this block.
+     */
+    hw_set_bits(&dma_channel_hw_addr((uint32_t) g_dma)->al1_ctrl,
+                DMA_CH0_CTRL_TRIG_EN_BITS);
     dma_channel_set_trans_count((uint32_t) g_dma, CAPTURE_RAW_WORDS, true);
     if (gpio_get(CAPTURE_PIN_BASE))
     {
@@ -254,6 +260,12 @@ capture_hw_finish (bool b_full)
     p_slot->dma_remaining =
         dma_channel_hw_addr((uint32_t) g_dma)->transfer_count
         & DMA_CH0_TRANS_COUNT_COUNT_BITS;
+    if (0u
+        == (dma_channel_hw_addr((uint32_t) g_dma)->ctrl_trig
+            & DMA_CH0_CTRL_TRIG_EN_BITS))
+    {
+        atomic_fetch_add(&g_dma_disabled_stops, 1u);
+    }
     /* RP2350 erratum E5: clear EN before abort, with no chained channel. */
     dma_channel_hw_addr((uint32_t) g_dma)->al1_ctrl &=
         ~DMA_CH0_CTRL_TRIG_EN_BITS;
@@ -504,17 +516,18 @@ capture_hw_release (uint32_t slot)
 void
 capture_hw_stats (capture_hw_stats_t * p_stats)
 {
-    p_stats->completed        = atomic_load(&g_completed);
-    p_stats->dma_full         = atomic_load(&g_full);
-    p_stats->fifo_stall       = atomic_load(&g_stall);
-    p_stats->pauses           = atomic_load(&g_pauses);
-    p_stats->armed_while_high = atomic_load(&g_high_arm);
-    p_stats->max_rearm_us     = atomic_load(&g_max_rearm);
-    p_stats->self_test_flags  = atomic_load(&g_self_test_flags);
-    p_stats->self_test_word   = atomic_load(&g_self_test_word);
-    p_stats->self_test_end_pc = atomic_load(&g_self_test_end_pc);
-    p_stats->self_test_irq    = atomic_load(&g_self_test_irq);
-    p_stats->eof_interrupts   = atomic_load(&g_eof_interrupts);
+    p_stats->completed          = atomic_load(&g_completed);
+    p_stats->dma_full           = atomic_load(&g_full);
+    p_stats->fifo_stall         = atomic_load(&g_stall);
+    p_stats->pauses             = atomic_load(&g_pauses);
+    p_stats->armed_while_high   = atomic_load(&g_high_arm);
+    p_stats->max_rearm_us       = atomic_load(&g_max_rearm);
+    p_stats->self_test_flags    = atomic_load(&g_self_test_flags);
+    p_stats->self_test_word     = atomic_load(&g_self_test_word);
+    p_stats->self_test_end_pc   = atomic_load(&g_self_test_end_pc);
+    p_stats->self_test_irq      = atomic_load(&g_self_test_irq);
+    p_stats->eof_interrupts     = atomic_load(&g_eof_interrupts);
+    p_stats->dma_disabled_stops = atomic_load(&g_dma_disabled_stops);
 }
 #endif /* PORT_CAPTURE */
 
