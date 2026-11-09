@@ -62,7 +62,11 @@ main (void)
     }
 
 #if PORT_KERNEL
-#if PORT_CAPTURE
+#if PORT_DETECTION
+    printf("Starting RP2350 SMP kernel; detection bring-up follows.\n");
+#elif PORT_ANALYSIS
+    printf("Starting RP2350 SMP kernel; analysis bring-up follows.\n");
+#elif PORT_CAPTURE
     printf("Starting RP2350 SMP kernel; capture bring-up follows.\n");
 #elif PORT_SMP
     printf("Starting RP2350 SMP kernel; board tests follow.\n");

@@ -1,7 +1,12 @@
 param(
     [string] $SdkPath = (Join-Path $env:USERPROFILE '.pico-sdk/sdk/2.3.1'),
-    [ValidateSet('diagnostic', 'kernel', 'smp', 'capture')]
-    [string] $Profile = 'diagnostic'
+    [ValidateSet('diagnostic', 'kernel', 'smp', 'capture', 'analysis', 'detection')]
+    [string] $Profile = 'diagnostic',
+    [ValidateSet(-1, 19)] [int] $AlarmGpio = -1,
+    [switch] $WatchdogReset,
+    [ValidateSet('none', 'consumer', 'worker', 'alarm')]
+    [string] $StallTask = 'none',
+    [ValidateRange(1000, 600000)] [int] $StallAfterMs = 10000
 )
 
 $ErrorActionPreference = 'Stop'
@@ -27,9 +32,21 @@ try {
     $env:PICO_SDK_PATH = $SdkPath
     $buildDirectory = Join-Path $PSScriptRoot "build/$Profile"
     $kernelOption = if ($Profile -ne 'diagnostic') { 'ON' } else { 'OFF' }
-    $smpOption = if ($Profile -in @('smp', 'capture')) { 'ON' } else { 'OFF' }
-    $captureOption = if ($Profile -eq 'capture') { 'ON' } else { 'OFF' }
-    $imageName = if ($Profile -eq 'capture') {
+    $smpOption = if ($Profile -in @('smp', 'capture', 'analysis', 'detection')) { 'ON' } else { 'OFF' }
+    $captureOption = if ($Profile -in @('capture', 'analysis', 'detection')) { 'ON' } else { 'OFF' }
+    $analysisOption = if ($Profile -in @('analysis', 'detection')) { 'ON' } else { 'OFF' }
+    $detectionOption = if ($Profile -eq 'detection') { 'ON' } else { 'OFF' }
+    $watchdogOption = if ($WatchdogReset) { 'ON' } else { 'OFF' }
+    $stallOwner = @('consumer', 'worker', 'alarm').IndexOf($StallTask)
+    if (($Profile -ne 'detection') -and
+        (($AlarmGpio -ne -1) -or $WatchdogReset -or ($StallTask -ne 'none'))) {
+        throw 'Alarm/watchdog/stall settings require -Profile detection.'
+    }
+    $imageName = if ($Profile -eq 'detection') {
+        'pico2w_detection_v07'
+    } elseif ($Profile -eq 'analysis') {
+        'pico2w_analysis_v06'
+    } elseif ($Profile -eq 'capture') {
         'pico2w_capture_v05'
     } elseif ($Profile -eq 'smp') {
         'pico2w_kernel_smp_v04'
@@ -47,7 +64,12 @@ try {
         "-DPICO_SDK_PATH=$SdkPath" "-Dpicotool_DIR=$picotoolDirectory" `
         "-Dpioasm_DIR=$pioasmDirectory" `
         "-DPORT_KERNEL=$kernelOption" "-DPORT_SMP=$smpOption" `
-        "-DPORT_CAPTURE=$captureOption" `
+        "-DPORT_CAPTURE=$captureOption" "-DPORT_ANALYSIS=$analysisOption" `
+        "-DPORT_DETECTION=$detectionOption" `
+        "-DDETECTION_ALARM_GPIO=$AlarmGpio" `
+        "-DDETECTION_WATCHDOG_RESET=$watchdogOption" `
+        "-DDETECTION_STALL_OWNER=$stallOwner" `
+        "-DDETECTION_STALL_AFTER_MS=$StallAfterMs" `
         -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
     if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
 
@@ -56,6 +78,18 @@ try {
 
     $uf2Path = Join-Path $buildDirectory "$imageName.uf2"
     if (-not (Test-Path -LiteralPath $uf2Path)) { throw 'UF2 output is missing.' }
+    if ($Profile -in @('analysis', 'detection')) {
+        & python -B "$PSScriptRoot/testing/host/verify_analysis_image.py" `
+            (Join-Path $buildDirectory "$imageName.elf") `
+            --report (Join-Path $buildDirectory 'math-verification.json')
+        if ($LASTEXITCODE -ne 0) { throw 'Analysis target math verification failed.' }
+    }
+    if ($Profile -eq 'detection') {
+        & python -B "$PSScriptRoot/testing/host/verify_detection_ram.py" `
+            (Join-Path $buildDirectory "$imageName.elf") `
+            --report (Join-Path $buildDirectory 'ram-verification.json')
+        if ($LASTEXITCODE -ne 0) { throw 'Detection reserved RAM verification failed.' }
+    }
     Write-Output "Firmware ready: $uf2Path"
 }
 finally {

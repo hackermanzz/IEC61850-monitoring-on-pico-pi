@@ -16,11 +16,24 @@
 #include "capture_phy.h"
 #include "capture_test.h" /* Core 0-only marked UDP batch accounting. */
 #include "mdio_phy.h"
+#if PORT_DETECTION
+#include "../health/detection.h"
+#include "../health/console.h"
+#include "hardware/watchdog.h"
+#endif
+#if PORT_ANALYSIS
+#include "../analysis/analysis_port.h"
+#include "kernel_port.h"
+#include "../analysis/iec_rules.h"
+#endif
 
-static uint32_t               g_worker_stack[1024] __attribute__((aligned(8)));
-static atomic_int             g_worker_status;
-static atomic_uint            g_decode_counts[CAPTURE_DECODE_INVALID + 1u];
-static atomic_uint            g_prefix_ready;
+static uint32_t    g_worker_stack[1024] __attribute__((aligned(8)));
+static atomic_int  g_worker_status;
+static atomic_uint g_decode_counts[CAPTURE_DECODE_INVALID + 1u];
+static atomic_uint g_prefix_ready;
+#if PORT_ANALYSIS
+static atomic_uint g_decode_max_us;
+#endif
 static uint32_t               g_prefix[16];
 static uint32_t               g_prefix_count;
 static uint32_t               g_prefix_words;
@@ -199,7 +212,19 @@ capture_app_process (const capture_raw_t * p_raw)
     {
         return;
     }
+#if PORT_ANALYSIS
+    uint64_t decode_started = time_us_64();
+#endif
     result = capture_decode(p_raw->p_words, p_raw->word_count, p_frame);
+#if PORT_ANALYSIS
+    uint64_t decode_elapsed = time_us_64() - decode_started;
+    uint32_t decode_us =
+        (UINT32_MAX < decode_elapsed) ? UINT32_MAX : (uint32_t) decode_elapsed;
+    if (decode_us > atomic_load(&g_decode_max_us))
+    {
+        atomic_store(&g_decode_max_us, decode_us);
+    }
+#endif
     atomic_fetch_add(&g_decode_counts[result], 1u);
     if (CAPTURE_DECODE_OK == result)
     {
@@ -235,6 +260,9 @@ capture_app_worker (INT code, void * p_exinf)
     atomic_store(&g_worker_status, 1);
     for (;;)
     {
+#if PORT_DETECTION
+        detection_heartbeat(SUPERVISION_WORKER);
+#endif
         if (capture_hw_take(&raw))
         {
             capture_hw_stats(&stats);
@@ -287,6 +315,76 @@ capture_app_report (uint32_t delivered)
            hw.max_rearm_us, pipe.pool_drops, pipe.queue_drops,
            pipe.ownership_errors, pipe.loss_generation);
     capture_app_report_tests();
+#if PORT_ANALYSIS
+    analysis_port_stats_t analysis = {0};
+    iec_rules_stats_t     rules    = {0};
+    printf("ANA stack_used=%" PRIu32 " stack_size=4096 bytes\n",
+           kernel_port_initial_stack_used());
+    analysis_port_stats(&analysis);
+    static uint64_t previous_time        = 0u;
+    static uint64_t previous_analysis_us = 0u;
+    static uint32_t previous_raw         = 0u;
+    static uint32_t previous_delivered   = 0u;
+    static uint32_t previous_accepted    = 0u;
+    uint64_t        now                  = time_us_64();
+    if (0u != previous_time)
+    {
+        uint64_t duration = now - previous_time;
+        uint32_t frames   = delivered - previous_delivered;
+        if (0u != duration)
+        {
+            printf(
+                "PERF interval_us=%" PRIu64 " raw_fps=%" PRIu32
+                " delivered_fps=%" PRIu32 " iec_fps=%" PRIu32
+                " avg_analysis_us=%" PRIu32 "\n",
+                duration,
+                (uint32_t) ((uint64_t) (hw.completed - previous_raw) * 1000000u
+                            / duration),
+                (uint32_t) ((uint64_t) frames * 1000000u / duration),
+                (uint32_t) ((uint64_t) (analysis.accepted - previous_accepted)
+                            * 1000000u / duration),
+                (0u < frames)
+                    ? (uint32_t) ((analysis.total_us - previous_analysis_us)
+                                  / frames)
+                    : 0u);
+        }
+    }
+    previous_time        = now;
+    previous_analysis_us = analysis.total_us;
+    previous_raw         = hw.completed;
+    previous_delivered   = delivered;
+    previous_accepted    = analysis.accepted;
+    printf("PERF max_decode_us=%u max_window_us=%" PRIu32
+           " frame_age_us=%" PRIu32 " max_frame_age_us=%" PRIu32 "\n",
+           atomic_load(&g_decode_max_us), analysis.max_window_us,
+           analysis.last_frame_age_us, analysis.max_frame_age_us);
+    iec_rules_stats(&rules);
+    printf("ANA received=%" PRIu32 " accepted=%" PRIu32 " rejected=%" PRIu32
+           " windows=%" PRIu32 " goose=%" PRIu32 " sv=%" PRIu32
+           " positive=%" PRIu32 "\n",
+           analysis.received, analysis.accepted, analysis.rejected,
+           analysis.windows, analysis.goose_windows, analysis.sv_windows,
+           analysis.positive_windows);
+    printf("ANA background=%" PRIu32 " goose_seen=%" PRIu32 " sv_seen=%" PRIu32
+           " iec_rejected=%" PRIu32 " oversize=%" PRIu32 "\n",
+           analysis.background, analysis.goose_seen, analysis.sv_seen,
+           analysis.iec_rejected, analysis.oversize);
+    printf("ANA gaps=%" PRIu32 " restarts=%" PRIu32 " stream_resets=%" PRIu32
+           " last_us=%" PRIu32 " max_us=%" PRIu32 " protocol=%" PRIu32
+           " label=%" PRIu32 " probability_ppm=%" PRIu32 "\n",
+           analysis.gaps, analysis.restarts, analysis.stream_resets,
+           analysis.last_us, analysis.max_us, analysis.last_protocol,
+           analysis.last_label, analysis.last_probability_ppm);
+    printf("RULE shadow=1 profiles=0 frames=%" PRIu32 " flagged=%" PRIu32
+           " run=%" PRIu32 " skipped=%" PRIu32 " parse_errors=%" PRIu32
+           " reasons=%08" PRIx32 "\n",
+           rules.frames, rules.flagged, rules.model_run, rules.model_skipped,
+           rules.parse_errors, rules.seen_reasons);
+#endif
+#if PORT_DETECTION
+    detection_report();
+    console_report();
+#endif
 }
 
 void
@@ -303,10 +401,51 @@ capture_app_task (INT start_code, void * p_exinf)
     capture_frame_t * p_frame          = NULL;
     bool              b_prefix_printed = false;
     bool              b_link           = false;
+#if PORT_ANALYSIS
+    uint64_t analysis_check_started = 0u;
+#endif
 
     (void) start_code;
     (void) p_exinf;
+#if PORT_DETECTION
+    if (!console_start())
+    {
+        printf("Detection console task startup failed.\n");
+        tk_ext_tsk();
+    }
+#endif
+#if PORT_ANALYSIS
+#if PORT_DETECTION
+    printf("Pico 2 W micro T-Kernel v0.7-dev2 detection. watchdog_reboot=%u\n",
+           watchdog_caused_reboot() ? 1u : 0u);
+#else
+    printf("Pico 2 W micro T-Kernel v0.6-dev3 analysis.\n");
+#endif
+    printf("Analysis initialization: begin\n");
+    analysis_check_started = time_us_64();
+    analysis_port_init();
+    printf("Analysis initialization: OK; reference self-check: begin\n");
+    if (!analysis_port_self_check())
+    {
+        printf("CHECK analysis synthetic GOOSE/SV rules/RF: FAIL\n");
+        tk_ext_tsk();
+    }
+    printf("CHECK analysis synthetic GOOSE/SV rules/RF: PASS time=%" PRIu64
+           " us\n",
+           time_us_64() - analysis_check_started);
+    printf("Analysis: Pico 1 rules/RF; shadow mode; no trusted profiles; "
+           "software float.\n");
+#if PORT_DETECTION
+    if (!detection_init())
+    {
+        printf("CHECK detection copied alarm queue/exhaustion: FAIL\n");
+        tk_ext_tsk();
+    }
+    printf("CHECK detection copied alarm queue/exhaustion: PASS\n");
+#endif
+#else
     printf("Pico 2 W micro T-Kernel v0.5-dev7-r1 capture.\n");
+#endif
     capture_test_init(&g_test_tracker);
     printf("Core 1: GP4/5/6 PIO+DMA RX; Core 0: MDIO/USB/consumer.\n");
     printf("10 Mbps only, clk_sys=%" PRIu32 " Hz; no traffic transmitted.\n",
@@ -347,12 +486,25 @@ capture_app_task (INT start_code, void * p_exinf)
         tk_ext_tsk();
     }
     report_at = time_us_64();
+#if PORT_DETECTION
+    if (!detection_start())
+    {
+        printf("Detection stopped: alarm/supervisor task startup failed.\n");
+        tk_ext_tsk();
+    }
+#endif
     for (;;)
     {
+#if PORT_DETECTION
+        detection_heartbeat(SUPERVISION_CONSUMER);
+#endif
         p_frame = capture_pipe_receive(100u);
         if (NULL != p_frame)
         {
             delivered++;
+#if PORT_ANALYSIS
+            analysis_port_observe(p_frame);
+#endif
             /* Observe while this consumer owns the FCS-verified frame. */
             (void) capture_test_observe(&g_test_tracker, p_frame->data,
                                         p_frame->length);
@@ -371,6 +523,9 @@ capture_app_task (INT start_code, void * p_exinf)
             }
             (void) capture_pipe_release(p_frame);
         }
+#if PORT_ANALYSIS
+        analysis_port_poll(time_us_64());
+#endif
         if ((!b_prefix_printed)
             && (1u
                 == atomic_load_explicit(&g_prefix_ready, memory_order_acquire)))

@@ -9,6 +9,18 @@ pico_sdk_init()
 option(PORT_KERNEL "Build the v0.3 single-core course-kernel harness" OFF)
 option(PORT_SMP "Build the v0.4 dual-core course-kernel harness" OFF)
 option(PORT_CAPTURE "Build the v0.5 PIO/DMA receive pipeline" OFF)
+option(PORT_ANALYSIS "Build the v0.6 analyzer/rules/RF consumer" OFF)
+option(PORT_DETECTION "Build v0.7 incidents/alarm/supervision" OFF)
+set(DETECTION_ALARM_GPIO "-1" CACHE STRING "-1 disabled;19 explicitly wired LED")
+option(DETECTION_WATCHDOG_RESET "Reset on supervised task stall" OFF)
+set(DETECTION_STALL_OWNER "-1" CACHE STRING "-1 none;0 consumer;1 worker;2 alarm")
+set(DETECTION_STALL_AFTER_MS "10000" CACHE STRING "Fault injection delay")
+if(PORT_DETECTION AND NOT PORT_ANALYSIS)
+    message(FATAL_ERROR "PORT_DETECTION requires PORT_ANALYSIS")
+endif()
+if(PORT_ANALYSIS AND NOT PORT_CAPTURE)
+    message(FATAL_ERROR "PORT_ANALYSIS requires PORT_CAPTURE")
+endif()
 if(PORT_CAPTURE AND (NOT PORT_KERNEL OR NOT PORT_SMP))
     message(FATAL_ERROR "PORT_CAPTURE requires PORT_KERNEL and PORT_SMP")
 endif()
@@ -22,7 +34,11 @@ endif()
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
-if(PORT_CAPTURE)
+if(PORT_DETECTION)
+    set(PORT_IMAGE pico2w_detection_v07)
+elseif(PORT_ANALYSIS)
+    set(PORT_IMAGE pico2w_analysis_v06)
+elseif(PORT_CAPTURE)
     set(PORT_IMAGE pico2w_capture_v05)
 elseif(PORT_SMP)
     set(PORT_IMAGE pico2w_kernel_smp_v04)
@@ -39,7 +55,41 @@ file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/app_program/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/app_program/*.S"
 )
+if(NOT PORT_ANALYSIS)
+    list(FILTER APP_SOURCES EXCLUDE REGEX "/analysis/")
+endif()
+if(NOT PORT_DETECTION)
+    list(FILTER APP_SOURCES EXCLUDE REGEX "/(health|alarm)/|/analysis/incident\\.c$")
+endif()
 add_executable(${PORT_IMAGE} ${APP_SOURCES})
+
+target_compile_definitions(${PORT_IMAGE} PRIVATE PORT_DETECTION=$<BOOL:${PORT_DETECTION}>)
+if(PORT_DETECTION)
+    if(NOT DETECTION_ALARM_GPIO MATCHES "^(-1|19)$" OR
+       NOT DETECTION_STALL_OWNER MATCHES "^(-1|0|1|2)$" OR
+       NOT DETECTION_STALL_AFTER_MS MATCHES "^[0-9]+$")
+        message(FATAL_ERROR "Invalid detection GPIO/stall settings")
+    endif()
+    target_compile_definitions(${PORT_IMAGE} PRIVATE
+        # Discard console diagnostics instead of waiting 500ms per USB write.
+        PICO_STDIO_USB_STDOUT_TIMEOUT_US=0 PICO_STDIO_DEADLOCK_TIMEOUT_MS=0
+        DETECTION_ALARM_GPIO=${DETECTION_ALARM_GPIO}
+        DETECTION_WATCHDOG_RESET=$<BOOL:${DETECTION_WATCHDOG_RESET}>
+        DETECTION_STALL_OWNER=${DETECTION_STALL_OWNER}
+        DETECTION_STALL_AFTER_MS=${DETECTION_STALL_AFTER_MS})
+    target_link_libraries(${PORT_IMAGE} hardware_watchdog)
+    # Bound libc's heap too; a minimum heap section alone does not cap sbrk.
+    target_link_options(${PORT_IMAGE} PRIVATE
+        "-Wl,--defsym=HEAP_LIMIT=__end__+2048"
+        "-Wl,--defsym=__detection_heap_start=__end__"
+        "-Wl,--undefined=_sbrk")
+endif()
+target_compile_definitions(${PORT_IMAGE} PRIVATE PORT_ANALYSIS=$<BOOL:${PORT_ANALYSIS}>)
+if(PORT_ANALYSIS)
+    target_compile_definitions(${PORT_IMAGE} PRIVATE IEC_RULE_GATE_ENABLED=0 MONITOR_LAB_PROFILES=0)
+    target_link_libraries(${PORT_IMAGE} m)
+    target_compile_options(${PORT_IMAGE} PRIVATE -fstack-usage)
+endif()
 target_compile_definitions(${PORT_IMAGE} PRIVATE PORT_KERNEL=$<BOOL:${PORT_KERNEL}>)
 target_compile_definitions(${PORT_IMAGE} PRIVATE PORT_SMP=$<BOOL:${PORT_SMP}>)
 target_compile_definitions(${PORT_IMAGE} PRIVATE PORT_CAPTURE=$<BOOL:${PORT_CAPTURE}>)
