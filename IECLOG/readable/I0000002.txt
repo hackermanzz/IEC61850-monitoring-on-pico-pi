@@ -1,0 +1,165 @@
+IEC 61850 incident report - SV
+Source file: I0000002.BIN
+SHA256: f570714281364d4b961ff8954d1e65bdd084b7e27d6eead9a676dc1946b67d5d
+Incident ID: 2 (IDs restart each boot)
+Incident time: 21.212556 seconds since boot
+This is uptime, not a calendar date/time.
+Model label: 1 (positive/anomalous)
+Model probability: 0.9812974333763123
+Model output on synthetic lab traffic is not proof of an attack.
+Rule reasons: 0x00000002
+Rules run in shadow mode; reason bit 0x2 means no trusted stream profile.
+Saved packets: 4
+Model inputs: 72
+
+Packet 1
+  Capture sequence: 181
+  Time since boot: 21.170501 s
+  Source MAC: 02:00:00:00:01:02
+  Destination MAC: 01:0c:cd:04:00:01
+  APPID: 0x4001
+  Stream identity: 'pico2lab-sv'
+  smpCnt: 0; secondary counter: 0
+  Six SV float values: 0, 1.73205078, 2.59807611, 4.89858741e-16, -4.33012724, -5.19615221
+  Exact value words: 00000000 3fddb3d7 402646e1 260d3132 c08a9067 c0a646e1
+  Raw packet length: 83 bytes (Ethernet FCS excluded)
+
+Packet 2
+  Capture sequence: 183
+  Time since boot: 21.184816 s
+  Source MAC: 02:00:00:00:01:02
+  Destination MAC: 01:0c:cd:04:00:01
+  APPID: 0x4001
+  Stream identity: 'pico2lab-sv'
+  smpCnt: 1; secondary counter: 0
+  Six SV float values: 0.195090324, 1.89386022, 2.25551939, -0.780361295, -4.73465061, -4.51103878
+  Exact value words: 3e47c5c2 3ff26a03 40105a6e bf47c5c2 c0978242 c0905a6e
+  Raw packet length: 83 bytes (Ethernet FCS excluded)
+
+Packet 3
+  Capture sequence: 185
+  Time since boot: 21.198697 s
+  Source MAC: 02:00:00:00:01:02
+  Destination MAC: 01:0c:cd:04:00:01
+  APPID: 0x4001
+  Stream identity: 'pico2lab-sv'
+  smpCnt: 2; secondary counter: 0
+  Six SV float values: 0.382683426, 1.98288977, 1.82628429, -1.5307337, -4.95722437, -3.65256858
+  Exact value words: 3ec3ef15 3ffdcf55 3fe9c3af bfc3ef15 c09ea195 c069c3af
+  Raw packet length: 83 bytes (Ethernet FCS excluded)
+
+Packet 4
+  Capture sequence: 187
+  Time since boot: 21.212556 s
+  Source MAC: 02:00:00:00:01:02
+  Destination MAC: 01:0c:cd:04:00:01
+  APPID: 0x4001
+  Stream identity: 'pico2lab-sv'
+  smpCnt: 3; secondary counter: 0
+  Six SV float values: 0.555570245, 1.99571788, 1.32686603, -2.22228098, -4.98929453, -2.65373206
+  Exact value words: 3f0e39da 3fff73af 3fa9d6bf c00e39da c09fa84d c029d6bf
+  Raw packet length: 83 bytes (Ethernet FCS excluded)
+
+Model inputs (names from the current model schema; __mean/max/last/std are window statistics)
+  [00] dt__mean = 0.010513749904930592
+  [01] dt__max = 0.014314999803900719
+  [02] dt__last = 0.01385900005698204
+  [03] dt__std = 0.006072839256376028
+  [04] dt_ratio__mean = 0.9881823658943176
+  [05] dt_ratio__max = 1.0
+  [06] dt_ratio__last = 0.9830472469329834
+  [07] dt_ratio__std = 0.012727334164083004
+  [08] age_since_any_goose_frame__mean = 0.006953999865800142
+  [09] age_since_any_goose_frame__max = 0.007265999913215637
+  [10] age_since_any_goose_frame__last = 0.006856000050902367
+  [11] age_since_any_goose_frame__std = 0.00018017627007793635
+  [12] no_asdu__mean = 1.0
+  [13] no_asdu__max = 1.0
+  [14] no_asdu__last = 1.0
+  [15] no_asdu__std = 0.0
+  [16] smpcnt_back_count__mean = 0.0
+  [17] smpcnt_back_count__max = 0.0
+  [18] smpcnt_back_count__last = 0.0
+  [19] smpcnt_back_count__std = 0.0
+  [20] smpcnt_repeat_count__mean = 0.0
+  [21] smpcnt_repeat_count__max = 0.0
+  [22] smpcnt_repeat_count__last = 0.0
+  [23] smpcnt_repeat_count__std = 0.0
+  [24] smpcnt_gap_count__mean = 0.0
+  [25] smpcnt_gap_count__max = 0.0
+  [26] smpcnt_gap_count__last = 0.0
+  [27] smpcnt_gap_count__std = 0.0
+  [28] smpcnt_delta_abs_max__mean = 0.75
+  [29] smpcnt_delta_abs_max__max = 1.0
+  [30] smpcnt_delta_abs_max__last = 1.0
+  [31] smpcnt_delta_abs_max__std = 0.4330126941204071
+  [32] wave_rel_change_mean__mean = 0.2611445188522339
+  [33] wave_rel_change_mean__max = 0.45556923747062683
+  [34] wave_rel_change_mean__last = 0.45556923747062683
+  [35] wave_rel_change_mean__std = 0.16932550072669983
+  [36] wave_rel_change_max__mean = 0.8407084941864014
+  [37] wave_rel_change_max__max = 1.4419196844100952
+  [38] wave_rel_change_max__last = 1.4419196844100952
+  [39] wave_rel_change_max__std = 0.5389328002929688
+  [40] wave_jump_fraction__mean = 0.75
+  [41] wave_jump_fraction__max = 1.0
+  [42] wave_jump_fraction__last = 1.0
+  [43] wave_jump_fraction__std = 0.4330126941204071
+  [44] wave_plateau_fraction__mean = 0.0
+  [45] wave_plateau_fraction__max = 0.0
+  [46] wave_plateau_fraction__last = 0.0
+  [47] wave_plateau_fraction__std = 0.0
+  [48] wave_jump_count__mean = 4.5
+  [49] wave_jump_count__max = 6.0
+  [50] wave_jump_count__last = 6.0
+  [51] wave_jump_count__std = 2.598076105117798
+  [52] wave_history_coverage__mean = 0.28125
+  [53] wave_history_coverage__max = 0.75
+  [54] wave_history_coverage__last = 0.75
+  [55] wave_history_coverage__std = 0.31093356013298035
+  [56] wave_change_robust_ratio__mean = 29.367765426635742
+  [57] wave_change_robust_ratio__max = 100.0
+  [58] wave_change_robust_ratio__last = 8.820686340332031
+  [59] wave_change_robust_ratio__std = 40.93522644042969
+  [60] wave_channel_range_rel_mean__mean = 0.0
+  [61] wave_channel_range_rel_mean__max = 0.0
+  [62] wave_channel_range_rel_mean__last = 0.0
+  [63] wave_channel_range_rel_mean__std = 0.0
+  [64] wave_channel_range_rel_max__mean = 0.0
+  [65] wave_channel_range_rel_max__max = 0.0
+  [66] wave_channel_range_rel_max__last = 0.0
+  [67] wave_channel_range_rel_max__std = 0.0
+  [68] publisher_change__mean = 0.0
+  [69] publisher_change__max = 0.0
+  [70] publisher_change__last = 0.0
+  [71] publisher_change__std = 0.0
+
+Raw Ethernet packets (hex; retained for detailed analysis)
+Packet 1:
+  0000: 01 0c cd 04 00 01 02 00 00 00 01 02 88 ba 40 01
+  0010: 00 45 00 00 00 00 60 3b 80 01 01 a2 36 30 34 80
+  0020: 0b 70 69 63 6f 32 6c 61 62 2d 73 76 82 02 00 00
+  0030: 83 04 00 00 00 01 85 01 01 87 18 00 00 00 00 3f
+  0040: dd b3 d7 40 26 46 e1 26 0d 31 32 c0 8a 90 67 c0
+  0050: a6 46 e1
+Packet 2:
+  0000: 01 0c cd 04 00 01 02 00 00 00 01 02 88 ba 40 01
+  0010: 00 45 00 00 00 00 60 3b 80 01 01 a2 36 30 34 80
+  0020: 0b 70 69 63 6f 32 6c 61 62 2d 73 76 82 02 00 01
+  0030: 83 04 00 00 00 01 85 01 01 87 18 3e 47 c5 c2 3f
+  0040: f2 6a 03 40 10 5a 6e bf 47 c5 c2 c0 97 82 42 c0
+  0050: 90 5a 6e
+Packet 3:
+  0000: 01 0c cd 04 00 01 02 00 00 00 01 02 88 ba 40 01
+  0010: 00 45 00 00 00 00 60 3b 80 01 01 a2 36 30 34 80
+  0020: 0b 70 69 63 6f 32 6c 61 62 2d 73 76 82 02 00 02
+  0030: 83 04 00 00 00 01 85 01 01 87 18 3e c3 ef 15 3f
+  0040: fd cf 55 3f e9 c3 af bf c3 ef 15 c0 9e a1 95 c0
+  0050: 69 c3 af
+Packet 4:
+  0000: 01 0c cd 04 00 01 02 00 00 00 01 02 88 ba 40 01
+  0010: 00 45 00 00 00 00 60 3b 80 01 01 a2 36 30 34 80
+  0020: 0b 70 69 63 6f 32 6c 61 62 2d 73 76 82 02 00 03
+  0030: 83 04 00 00 00 01 85 01 01 87 18 3f 0e 39 da 3f
+  0040: ff 73 af 3f a9 d6 bf c0 0e 39 da c0 9f a8 4d c0
+  0050: 29 d6 bf

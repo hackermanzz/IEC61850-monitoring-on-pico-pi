@@ -1,16 +1,32 @@
 # Pico 2 W port
 
-Six build profiles target Pico 2 W / RP2350 Arm Secure: SDK diagnostic,
+Seven build profiles target Pico 2 W / RP2350 Arm Secure: SDK diagnostic,
 single-core micro T-Kernel v0.3-r1, dual-core v0.4-dev2 acceptance,
 **v0.5-dev7-r1 capture**, **v0.6-dev3 analysis/rules/RF**, and
-**v0.7-dev2 detection/alarm/supervision**.
+**v0.7-dev2 detection/alarm/supervision**, and
+**v0.8-dev2 SD incident storage**.
+
+v0.8 now has a separate `storage` profile: a low-priority SD writer, copied
+256-byte messages, FAT16/FAT32 files and SPI DMA sector transfers. The image
+builds within the original RAM ceiling. Maker Pi Pico carrier identity is now
+confirmed: `-SdPinsConfigured` enables its built-in SD slot using SPI1/DMA.
+Omit that flag to keep SD pins disabled. See the
+[storage feature guide](app_program/storage/README.md). Dev2 mixed board logs now
+confirm two incident writes with `durable=2 failed=0`, zero SD timeouts and both
+evidence slots released. Actual card-file readback
+also passes:the latest GOOSE/SV pair reproduces its saved model inputs and
+results. **Basic v0.8 functionality is complete for the supplied lab workload.**
+The PC reader can also generate readable TXT reports while preserving BIN evidence. Feature development is
+active; extended v0.7 stress/soak qualification is deferred by user preference.
 
 v0.7 has a separate `detection` profile with single-protocol incidents,
 two full-window evidence slots, copied alarm events and task-progress
-supervision. Dev1 board logs show independent GOOSE/SV incidents and mixed
-incidents/evidence; the user confirms the physical mixed alarm LED. Full board
-acceptance remains open. Dev2 fixes truncated USB diagnostics with a bounded
-complete-line queue. GPIO output and watchdog reset default off; see the
+supervision. Dev2 board logs now show100accepted/49windows/one incident/one
+evidence record for each single protocol, with physical GOOSE/SV LEDs confirmed.
+Mixed shows two incidents/evidence records/software alarm mask3, but four SV
+frames unobserved against the1500-per-protocol plan. Full acceptance remains
+open. Dev2 complete-line diagnostics are readable, with2–3 pre-test line drops
+that remain unchanged during traffic. GPIO output and watchdog reset default off; see the
 [v0.7 walkthrough and board procedure](app_program/health/README.md).
 
 The supplied board logs pass the v0.3 single-core checks and the v0.4 SMP
@@ -41,7 +57,7 @@ INF2004_Pico2W_Port/
     app_main.c           SDK main, console/time and PHY scan
     capture/             MDIO, PIO/DMA RX, decoder and frame pipe
     analysis/            implemented parser/features/models and shadow rules
-    storage/             future S1 SD
+    storage/             S1 FAT16/32 incident files and SPI DMA
     health/              S4 bounded evidence, supervision and v0.7 runtime
     alarm/               S5 local alarm; future notifications
   config/config.h        static-buffer kernel profiles
@@ -64,6 +80,7 @@ From this directory in PowerShell:
 .\run_these.ps1 -Profile capture
 .\run_these.ps1 -Profile analysis
 .\run_these.ps1 -Profile detection
+.\run_these.ps1 -Profile storage
 ```
 
 The default profile is `diagnostic`. Outputs are separate:
@@ -75,6 +92,7 @@ The default profile is `diagnostic`. Outputs are separate:
 | capture | `build/capture/pico2w_capture_v05.uf2` | SMP receive pipeline: verified 10 Mbps negotiation, GP4/5/6 PIO/DMA, CRC, bounded frame handoff and counters. |
 | analysis | `build/analysis/pico2w_analysis_v06.uf2` | Capture plus existing GOOSE/SV parsing, shadow rules, RF models, reference-derived startup self-check and analysis/stack counters. |
 | detection | `build/detection/pico2w_detection_v07.uf2` | v0.6 pipeline plus latched incidents, two evidence records, copied alarm events and a supervisor; GPIO/reset disabled by default. |
+| storage | `build/storage/pico2w_storage_v08.uf2` | v0.7 plus SD incident writer; SD pins disabled by default; -SdPinsConfigured enables the confirmed Maker Pi Pico slot. |
 | smp | `build/smp/pico2w_kernel_smp_v04.uf2` | Original checks plus Core 1 affinity, delayed mailbox replies, shared counter and remote alarm/audits. |
 
 The script works from any working directory and uses installed SDK 2.3.1,
@@ -147,7 +165,7 @@ the kernel port and PHY timing need measured evidence first.
 | v0.4 SMP | Complete supplied functional suite passes, failures=0 | Longer stress, stack peaks, migration/reclaim and combined load. |
 | v0.5 capture | Functional board capture and Core1-to-Core0 delivery pass:343 CRC-valid frames | Dev7-r1 first100/100 batch passes; two baseline repeats pending; burst/overload/gap and independent offered-frame loss measurements follow. |
 | v0.6 analysis | Functional analysis-parity milestone complete for tested lab schema:843 offline cases/199 windows match reference; board self-check, individual IEC and mixed2000-frame counts pass | Broader rate/burst/large-frame/soak, accuracy and worst-case resource qualification remain. Higher-rate capture shortfalls remain open. |
-| v0.7 services | Dev1 board logs show independent GOOSE/SV incidents and mixed retained evidence/software alarm; mixed physical LED user-confirmed. Dev2 adds readable bounded console output | Dev2 board regression, single-protocol physical LEDs, watchdog/stall, full/slow sinks, long attacks, service-load timing/stacks remain. SD/network are later milestones. |
+| v0.7 services | Dev2 single-protocol100/49/incident/evidence/software alarm and physical LEDs pass; mixed two incidents/evidence/software mask3; readable console/observed stack margins | Mixed4SV shortfall,watchdog/stall,full/slow sinks,long attacks,soak,physical latency/worst-case stacks remain. SD/network are later milestones. |
 
 These versions are engineering milestones, not released/tagged software.
 There is no meaningful overall completion percentage yet.
@@ -170,7 +188,7 @@ firmware measurements do not qualify this port.
 | **v0.5 — Capture acquisition and handoff** | S2 implemented in its own SMP profile: 10 Mbps PHY configuration/readback, three-pin PIO sampling and qualified low-tail detector, DMA double raw buffers, bounded decoder/FCS, kernel frame pool and non-waiting pointer queue, timestamps and loss generation. | Host tests and real-kernel pool/queue board checks pass;343 CRC-valid frames delivered. Compare real bytes/FCS and raw timing; test DMA overrun and exhaustion, then measure sustained/burst capture against independent offered-frame counts. |
 | **v0.6 — Analysis parity** | S3: port parsing, per-stream state, features, generated RF models and shadow rules. Preserve four-frame windows/stride two, 128-sample SV history, 52 GOOSE/72 SV inputs, four GOOSE/one SV streams and all four raw evidence frames. Reconcile shared headers/APIs. | Host replay matches reference features/model outputs; malformed frames and loss/restart paths are checked. Target build and timed board replay establish inference cost and stack/RAM use. Confirm actual SV payload schema before claiming publisher compatibility. |
 | **v0.7 — Detection, alarm and supervision** | S3 owns incident state; S4 provides bounded evidence storage and one watchdog supervisor; S5 drives the alarm. Either GOOSE or SV alone can create an incident. Add copied output queues, progress telemetry, evidence exhaustion policy and arrival-to-alarm timestamps. | GOOSE-only, SV-only and mixed cases activate the LED. Full/slow output sinks and long attacks do not stop detection. Inject a software task stall and distinguish healthy idle. Measure complete latency including window collection. |
-| **v0.8 — SD incident records with DMA** | S1: SD writer and SPI/FatFs baseline, then DMA-backed SPI block transfers; bounded record queue, incident/evidence serialization and durable ACK matched to slot and incident ID. User reserves GP10–GP15 for SD; verify exact signal mapping and bus mode before enabling I/O. | Prove safe filesystem writes, DMA ownership/completion/timeout handling, then concurrent capture/analysis/alarm with slow/full/removed card and ACK mismatches. Recheck RAM, capture loss and alarm latency. FAT16/32 only; exclusive new files under `IECLOG`, preserving existing NOOBS files. No formatting or overwrites. |
+| **v0.8 - SD incident records with DMA** | Implemented in the separate storage profile: S1 FAT16/32 writer, copied chunks, full evidence serialization, matched completion ACKs and SPI DMA. GP10-GP15 reserved; Maker Pi Pico mapping confirmed; explicit -SdPinsConfigured enables the onboard slot. | Build/RAM/software-math and focused offline file/ACK checks pass. Next: one physical incident file after wiring confirmation. Extended combined stress/soak checks deferred. Existing NOOBS files protected by exclusive new IECLOG names. |
 | **v0.9 — Wi-Fi and Telegram** | S5: adapt existing HTTPS/parser fixes to the qualified RP2350 runtime. Preserve one radio/lwIP owner, bounded notification queues/retries, independent alarm path and peak TLS allocation telemetry. Investigate driver/runtime feasibility during v0.3–v0.4. | Board tests cover successful delivery, disconnect, timeout, TLS failure and alert backlog with capture/analysis active. Record CPU, stack and heap peaks. Keep credentials outside source/export artifacts. |
 | **v1.0 — Qualified combined system** | Integrate all required subsystems; fix versions/configuration and document workload, wiring, model/publisher schema, stream admission and evidence policies. | Demonstrate >=99% capture for the agreed sustained/burst workload, agreed arrival-to-LED latency, held-out accuracy and <=216064 bytes total peak RAM with required services enabled. Include startup, long attacks, queue exhaustion, SD/network faults and soak testing. Publish limits and reproducible results. |
 | **v1.1 — Optional optimization** | Evaluate inference gating, stream expiry/admission improvements, model retraining or feature changes, and optional buzzer after the baseline is qualified. | Compare missed attacks, false alarms, latency, CPU and RAM against v1.0. Feature/history changes require retraining/re-export and replay. Enable gating only after explicit policy selection and evidence. |
@@ -193,39 +211,35 @@ The consumer is Core 0 priority 5. This profile uses two application tasks,
 one fixed pool and one message buffer; acceptance-suite objects are excluded.
 Recalculate priorities/resources when integrating later services.
 
-### v0.8 SD/DMA sequence
+### v0.8 SD/DMA implementation
 
-DMA-backed SD storage belongs in **v0.8**, after v0.7 incident/evidence ownership
-and alarm/supervisor acceptance. DMA (direct memory access) moves bytes between
-a RAM buffer and the SD interface with less CPU copying. The SD driver and
-filesystem still manage commands, card readiness, file contents and failures.
-It does not remove the need for bounded queues or make a slow card instantaneous.
+The separate `storage` profile now implements the SD incident path described in
+[the storage guide](app_program/storage/README.md). DMA (direct memory access)
+moves sector bytes between RAM and SPI without a CPU copy for every byte.
+The filesystem still manages files, card readiness and completion.
 
-| Step | Work | Exit check |
+| Part | Implemented behavior | Current evidence |
 | --- | --- | --- |
-| v0.8a — Safe SD baseline | Reserve user-specified GP10–GP15; verify carrier and exact signal mapping. Establish a bounded S1 writer, FAT16/32 mount and exclusive new incident files, initially using a simple SPI block driver. Budget filesystem state, sector buffers, queue and stack before adding them. | Known records read back correctly; existing card files untouched; missing/full/removed card returns controlled errors without blocking detection. |
-| v0.8b — DMA block transfers | Add SPI-paced DMA beneath the same filesystem/writer API. Claim separate available DMA resources and review interrupt ownership against Core1 capture's exclusive DMA_IRQ_1. Keep transfer buffers owned and unchanged until DMA completion; handle card busy, timeout, abort and cleanup separately. | Repeated block/readback checks, delayed/failed completions and removal tests show no buffer reuse or channel/IRQ conflict. Compare CPU time and transfer timing with the baseline. |
-| v0.8c — Durable evidence handoff and combined qualification | Copy bounded incident records to S1; keep S3 the sole incident owner. Return completion ACKs containing both slot and incident ID only after the driver's card-completion and filesystem sync policy succeeds. Define safe evidence-slot release/reuse at this milestone. | Reject stale/mismatched ACKs; full/slow sinks and long attacks do not stop detection. Measure capture loss, alarm latency, stack/total RAM and soak with SD DMA active. |
+| Filesystem and writer | S1 owns FAT16/32, exclusive new `IECLOG` files and controlled error handling. Existing files are never opened for replacement. | Real FatFs on an offline memory card preserves an existing file and skips a colliding name. Physical card result pending. |
+| SPI DMA | Separately claimed TX/RX channels, SPI pacing, CRC checks, deadlines and abort cleanup; capture retains its own channel and IRQ. | Target compiles with the complete driver retained. Physical transfer/timeout behavior is unverified. |
+| Evidence handoff | S3 sends copied 256-byte chunks and releases evidence only after a matching slot/incident success ACK following sync and close. | Offline checks pass byte parity, stale ACK rejection, evidence reuse, and retention on sync/early-write failure. |
+| RAM | Storage-only omission of the 5176-byte marked UDP tracker funds the writer without reducing capture/model/history/evidence capacity. | GP19 storage reserves213204/216064bytes in dev2; rebuilt detection reserves214992. Preserved board-tested v0.7 image remains unchanged. |
 
-The intended path is `incident/evidence -> bounded S1 record queue -> FatFs ->
-SD block driver -> SPI + DMA -> card`. Capture's raw DMA buffers stay owned by
-capture; the writer uses its own bounded buffers. DMA completion alone is not
-permission to release evidence as durably stored: FatFs distinguishes buffered
-writes and completion/sync requests. See the
-[official SPI DMA example](https://github.com/raspberrypi/pico-examples/blob/master/spi/spi_dma/spi_dma.c)
+The implemented path is `incident/evidence -> copied bounded queue -> S1 ->
+FatFs -> SPI DMA -> card`. Capture's raw DMA buffers remain owned by capture.
+DMA completion alone does not release evidence: the file must also sync and close.
+See the [official SPI DMA example](https://github.com/raspberrypi/pico-examples/blob/master/spi/spi_dma/spi_dma.c)
 and [FatFs write-completion contract](https://elm-chan.org/fsw/ff/doc/dwrite.html).
 
-**GP10–GP15 is the reserved SD range, not yet an implemented signal map.**
-The baseline roadmap remains SPI plus DMA; using all six pins for a native
-four-bit SD interface would be a separate transport choice to confirm before
-implementation. Do not assign the reserved pins to capture or alarm outputs.
+**Maker Pi Pico with the Pico 2 W plugged in is confirmed by the user.** Its
+built-in slot supports the implemented SPI1/DMA driver on GP10=SCK, GP11=MOSI,
+GP12=MISO, GP15=CS. GP13/14 are reserved SD data pins and become pulled-up
+inputs. No external SD wiring or replacement native transport is needed.
 
-Current v0.7-dev2 GP19 candidate reserves214976/216064bytes, leaving1088bytes.
-SD buffers, filesystem
-state and its task must fit a reviewed total budget; DMA is not a RAM saving
-assumption. Keep the model/history capacities and agreed ceiling unchanged.
-This addition changes the roadmap only; no SD/DMA storage code or wiring has
-been enabled, and the existing NOOBS card contents remain protected.
+Build the enabled image with `-Profile storage -AlarmGpio 19 -SdPinsConfigured`.
+Physical content readback of both completed incident files passes. The guide
+explains `state=2`, `durable`, `IECLOG` files and PC-readable TXT conversion. Extended stress and soak qualification stay
+deferred. No physical card access, flashing or wiring change was performed here.
 
 ### Dependencies and decisions still needed
 
@@ -275,15 +289,35 @@ measurements. Repeat the150-requested-fps case with a quiet baseline and isolate
 acquisition if gaps recur; see the [throughput procedure](testing/throughput/README.md).
 Do not attribute v0.6 results to the new service-loaded v0.7 image.
 
-Latest v0.7-dev1 mixed1500-per-protocol test reaches GOOSE1500/SV1499,
-2999accepted and1496windows, with one stream reset. It establishes two incidents,
-two saved evidence windows and software alarm mask3; physical mixed LED is
-user-confirmed. GOOSE default shows49positive windows/one incident/alarm mask1;
-SV default shows100accepted/49windows/one incident/one saved record. USB output
-is truncated, so unavailable fields are not reconstructed as passing evidence.
-No independent sender completion/wire count or single-protocol physical LED
-confirmation was supplied. Dev2 changes logging only; the missing SV is not
-declared fixed. Preserve the original board logs and repeat with readable output.
+Latest v0.7-dev2 single-protocol runs each reach100accepted/49windows,oneincident,
+one saved evidence record and requested/applied1(GOOSE) or2(SV). The user confirms
+both physical LEDs lit. Mixed reaches GOOSE1500/SV1496,2996accepted and1491windows
+(GOOSE749/SV742),four history resets,two incidents,two evidence records and
+requested/applied3. Previous dev1 mixed physical LED was confirmed; no independent
+wire count or new physical timing measurement exists. Capture pool/queue and
+ownership errors remain zero. Acquisition gaps still need investigation.
+
+Dev2 logging regression passes: readable complete records,2/3 startup/pre-test
+line drops unchanged during traffic. Logs are still best effort. Observed task
+watermarks are consumer2124/4096,alarm188/2048,supervisor220/2048 andconsole452/1536.
+These are not worst-case stack qualification. Single-protocol oldest-frame-end
+to alarm-service spans are308180/316652us; four-frame collection at10fps already
+takes about300ms. A100ms full alarm deadline is not established. Next use the
+existing worker-stall monitor/reset procedures and characterize capture gaps
+with matching sender reports. The worker-stall MONITOR test now passes on board:
+injected/stalled mask2,worker heartbeat frozen,other task/check counters and
+console continue for50.6seconds after detection with resetdisabled. The user subsequently confirms the worker watchdog-reset test works after
+PuTTY reconnect (no new reset-cycle log supplied). Alarm-stall monitor also
+board-passes:mask4,alarm heartbeat501 frozen,otherowners/console continue32.37s
+after detection withreset0. Consumer-reset recovery now has a post-boot log with
+watchdog_reboot1,successful self-check/startup and advancing task counters.
+The watchdog-enabled idle run now shows83.78seconds of continuous progress,
+resetenabled andno stall/falseincident/reboot. Ethernet removal is user-confirmed
+but its timing is not recorded. Corev0.7 functions have functional evidence;
+the user prioritizes feature development over further qualification rounds.
+Proceed toward the v0.8 SD/DMA feature while retaining the known capture,
+latency andRAM limits. Full/slow sink,soak and broader acceptance checks are
+deferred;this is not full-system qualification.
 
 ### Capture regression procedure
 

@@ -1,10 +1,12 @@
 # v0.7 detection, evidence, alarm and supervision
 
 The `detection` profile builds **0.7-dev2** on the v0.6 parser/rules/RF pipeline.
-Dev1 has board evidence for independent GOOSE/SV incidents and mixed incident,
-evidence and software alarm behavior. The user confirms the mixed physical LED.
-**Complete v0.7 acceptance remains pending.** Dev2 fixes truncated console output;
-its own board run is pending. Existing capture-rate shortfalls remain open.
+Dev2 now has board evidence for independent GOOSE/SV incidents,retained evidence,
+software alarm and user-confirmed physical LEDs. Mixed also retains two records
+and applies mask3, but records four SV frames fewer than the1500-each plan.
+**Complete v0.7 acceptance remains pending.** Dev2's complete-line logging works
+through these runs;2–3 pre-test diagnostic line drops remain explicit. Existing
+capture-rate shortfalls and watchdog/stall acceptance remain open.
 The separate `analysis` profile retains v0.6 behavior and its own output directory.
 
 Think of capture as a conveyor, the analyzer as a collector that examines four
@@ -105,8 +107,10 @@ partial printf calls are joined before publication. Logs remain best effort,
 not lossless evidence or a physical USB-disconnection framing guarantee. The
 queue adds no waiting to analysis. The output task yields after every chunk and
 is intentionally not a watchdog-critical owner. Host slow-sink/preemption/full/
-overlong/ring-wrap tests pass; target timing and its1536-byte stack need board
-qualification. This does not establish capture latency under USB service load. There are two message
+overlong/ring-wrap tests pass. These board runs report a452/1536-byte console
+watermark and readable steady logs, with diagnostic drop counts unchanged
+during traffic. Target worst-case timing/stack qualification remains open.
+This does not establish capture latency under USB service load. There are two message
 buffers (capture pointers and copied alarm events)
 and one fixed capture pool; existing kernel object limits remain unchanged.
 
@@ -250,7 +254,157 @@ reports; list interfaces again rather than assuming that index is permanent).
 Physical LED transitions, actual watchdog resets, queue-pressure behavior,
 capture/stack effects under service load and soak remain board acceptance work.
 
-## Recorded dev1 board evidence and remaining checks
+## Latest dev2 board results
+
+The three supplied dev2 logs are archived verbatim in `testing/detection/logs/`,
+with original hashes and a separate JSON review. The user explicitly confirmed
+the physical LED lit for BOTH new single-protocol tests. No new sender JSON or
+independent physical timing/wire count was supplied. Mixed is compared with the
+previously stated1500-per-protocol plan.
+
+| Case | Accepted / model windows | Incident / evidence / software alarm |
+| --- | --- | --- |
+| GOOSE | 100 /49GOOSE | 1incident,1record,requested/applied1,physicalLED confirmed |
+| SV | 100 /49SV | 1incident,1record,requested/applied2,physicalLED confirmed |
+| Mixed | 2996:GOOSE1500/SV1496;1491windows:749/742 | 2incidents,2records,requested/applied3;prior dev1 mixed physicalLED confirmed |
+
+All cases show zero evidence copy errors,alarm event queue drops,capture
+pool/queue drops and ownership errors. These are functional protocol/evidence/
+alarm passes; a zero counter does not prove gap-free acquisition. Mixed has
+four history resets and seven fewer score windows than the1498 expected for
+complete1500each. Model windows are not a packet-loss counter.
+
+Mixed last pre-IEC report16.694441s -> final complete40.080897s: raw pauses29->49,
+high_arm10->18,no_sfd7->12,short2->4,bad_crc0unchanged,loss_gen48->83 andANA
+gaps38->64. Capture full/stall/DMA-disabled and decoded pool/queue drops remain0.
+Background103->147; reception faults cannot be assigned to individual missing
+SV packets from these counters. This remains an acquisition lead,not proof that
+the DMA engine saturated or the analyzer's output queue overflowed.
+
+GOOSE/SV/mixed request->apply intervals are4935/13764/17241us. Oldest-frame-end
+to alarm-service spans308180/316652/60818us; newest-frame-end spans7203/15667/
+19455us. The single-protocol cold windows demonstrate the~300ms collection cost
+at10fps. These exclude first-bit/pre-ISR latency and are not physical attack
+arrival-to-LED measurements. Do not claim a100ms deadline from inference time.
+
+LOG dropped_lines is2(GOOSE),3(SV),2(mixed),already present before IEC traffic
+and unchanged during each batch. Whole-line logging is usable;startup output is
+not lossless. The SV paste ends mid-line,so use its preceding complete reports.
+Observed watermarks:consumer2124/4096,alarm188/2048,supervisor220/2048,console
+452/1536. HEALTH stalled_mask/injected_mask/reset remain0; these logs do not
+exercise deliberate stalls,hardware reset,full/slow sinks or long soak.
+
+The verified local dev2 UF2/ELF is retained as
+`build/detection/known-working-v07-dev2-functional.*`. Local hashes match the
+previously verified candidate;no independent device hash was read. No rebuild,
+new firmware changes,assistant flashing or additional commit was needed to
+record this evidence. Next run the worker-stall monitor/reset procedure above
+and continue controlled acquisition characterization with matching sender JSON.
+
+## Worker-stall monitor test: board PASS
+
+The supplied dev2 worker-stall monitor log shows healthy progress before the
+fault,then `injected_mask=2` at report16.225705s and `stalled_mask=2` at
+17.325704s. The worker heartbeat freezes at14415375; consumer/alarm counters,
+HEALTH checks and console reports continue through67.925704s. The failure stays
+latched for at least50.6seconds after its first visible detection. There is one
+boot banner and `reset=0` throughout,matching the monitor-only test.
+
+These report times are sampled about one second apart; their difference does
+not measure exact injection-to-detection latency. The original log and review
+are preserved under `testing/detection/logs/v07_dev2_worker_stall_monitor_*`.
+No publisher was needed; zero IEC windows/incidents/alarm is expected here.
+No firmware change is indicated. This verifies worker-stall detection and
+continued operation,not hardware-watchdog reset or the other stalled owners.
+
+The worker reset variant used after this monitor pass was:
+
+```powershell
+.\INF2004_Pico2W_Port\run_these.ps1 -Profile detection -AlarmGpio 19 -WatchdogReset -StallTask worker
+```
+
+Manually flash it,keep Ethernet connected and capture serial output. Around
+10seconds after service startup the worker stalls; expect a hardware reset
+about3–4seconds after lost progress and `watchdog_reboot=1` in the next banner.
+Capture that next boot too. This injected image repeats the test after every
+boot until replaced. Restore normal operation by building/flashing without
+`-WatchdogReset` and without `-StallTask worker`. No traffic sender is needed.
+
+USB serial can disconnect when the Pico resets. PuTTY may remain inactive;
+after the COM port returns,use its title-bar menu **Restart Session**,or open a
+new serial session. Keep USB power connected while doing this: a separate power
+cycle would change the reset-cause test. Firmware waits up to15seconds for USB
+CDC connection at boot. A terminal disconnect alone is not proof of watchdog
+reset; require the new startup banner's `watchdog_reboot=1` and restarted time
+counter. See [PuTTY's session controls](https://www.puttyssh.org/0.83/htmldoc/Chapter3.html#using-newsession).
+
+## Remaining supervision sequence
+
+The latest watchdog-enabled idle log now covers83.779985seconds of advancing
+tasks/checks withreset1,injected/stalled0,no incident andno reboot. The user
+confirms Ethernet was unplugged,but not its timing. This is an observed
+functional pass,not proof of60seconds in each cable state orlongsoak.
+
+**Current priority is feature development.** The user explicitly deferred extra
+qualification rounds as excessive. Do not require repeat idle/stall ornew
+evidence-exhaustion test batches before implementing the next feature. Keep
+the following procedures as optional future qualification references andcarry
+forward known capture/latency/RAM limits;the system is not fully qualified.
+
+The consumer-reset test now supplies its post-reboot log: banner
+`watchdog_reboot=1`,analysis selfcheck4633us,queue/pool/PHY/link/PIO checks pass.
+New runtime reports13.032281->15.189385s andHEALTHchecks20->38 show restarted
+tasks progressing,withreset1 and injected/stalled0 before the next fault.
+This accepts the prepared consumer test's recovery evidence;the excerpt begins
+after reset and does not measure the fault-to-reset interval. It is not a
+healthy-idle test because the injected image would stall the consumer again.
+The exact log/review is preserved under
+`testing/detection/logs/v07_dev2_consumer_watchdog_*`.
+
+The alarm-monitor candidate now also passes on board: `injected_mask=4` first
+appears at27.465809s and `stalled_mask=4` at28.485810s. Alarm heartbeat stays501,
+while consumer/capture/check counters and console continue through60.855814s,
+at least32.370004seconds after detection,withreset0 andonebootbanner. Sampled
+report spacing is not exact fault-detection latency. LOGdrops2remainconstant;
+console watermark464/1536. The original log/review is archived as
+`testing/detection/logs/v07_dev2_alarm_stall_monitor_*`. This verifies the alarm
+owner's stall detection,not physical actuation during a failed alarm task.
+
+After the monitor log passed,the user confirmed the worker watchdog-reset test
+works correctly following PuTTY reconnection. This is recorded as a user-reported
+functional pass; no additional reset-cycle log or exact timing measurement was
+supplied. Continue with these separately named dev2 qualification images under
+`build/detection/` (UF2 and matching ELF/settings/hash records):
+
+| Image | Watchdog / fault | What to record |
+| --- | --- | --- |
+| `v07-dev2-alarm-stall-monitor.uf2` | Reset OFF; alarm task stalls after10seconds | Board PASS:mask4,alarm beat501 frozen;otherowners continue32.37seconds after detection. |
+| `v07-dev2-consumer-watchdog-reset.uf2` | Reset ON; consumer stalls after10seconds | Post-reset board log PASS:watchdog_reboot1,successful startup and advancing task counters. Exact pre-fault/reset timing not supplied. |
+| `v07-dev2-watchdog-idle.uf2` | Reset ON; no injected fault | At least60seconds quiet after link ready,withreset1 but injected/stalled0 and heartbeats/checks advancing;no false reset or incident. Repeat with Ethernet unplugged AFTER startup. |
+| `v07-dev2-normal-gp19.uf2` | Reset OFF; no injected fault | Normal functional fallback withGP19. Use after qualification tests. |
+
+All four useGP19 and unchanged v0.7-dev2 source. They are built candidates,not
+additional board passes. No publisher is required. Flash ONE test at a time,
+save its entire log,then proceed to the next. Fault-injection reset builds
+repeat their failure after each reboot until replaced. The generic
+`pico2w_detection_v07.uf2` is restored to normalGP19/resetOFF/no-fault settings
+after preparation;use the explicitly named watchdog-idle image for the next
+test. Five application tasks and all model/evidence capacities remain unchanged.
+
+For the idle check,replace the injected image with `v07-dev2-watchdog-idle.uf2`,
+keep Ethernet connected until link/startup completes,and capture60seconds with
+no publisher. Then unplug onlyEthernet and capture another60seconds while USB
+power stays connected. `HEALTH reset=1` means watchdog reset is ENABLED,not that
+a reset occurred. Require injected/stalled0,advancing task/check counters,no new
+boot banner andno incident. Reconnection/reset evidence from injected tests does
+not substitute for this healthy-idle false-alarm check.
+
+The idle test covers healthy inactivity with watchdog feeding;unplugging a cable
+is not another software-stall injection. Full/slow evidence/output sinks,long
+attacks,soak,capture shortfalls and complete physical alarm latency still need
+qualification. S1 SD/DMA remains the later v0.8 roadmap work.
+
+## Earlier dev1 board evidence
 
 Original pasted logs are preserved byte-for-byte locally under
 `testing/detection/logs/`, with hashes and a loss-aware JSON review. User confirms
@@ -269,11 +423,10 @@ not physical arrival-to-LED measurements. Existing gaps/pauses and the one SV
 shortfall are not fixed by the logging change. Do not reconstruct missing fields
 as zeros or label synthetic model positives as validated real attacks.
 
-Next use dev2 with GP19 on separate fresh boots for default GOOSE,SV,mixed100each
-before repeating mixed1500each. Require readable INC/EVID/ALARM/HEALTH/LOG lines
-and record physical LED for EACH single protocol. Save sender JSON and check
-LOG dropped_lines before treating a serial excerpt as complete. Watchdog/stall,
-full evidence ledger/sinks,long attacks and worst-case service-load remain open.
+These truncated dev1 records are superseded for single-protocol acceptance by
+the readable dev2 results above. Watchdog/stall,full evidence ledger/sinks,long
+attacks and worst-case service-load remain open. Save sender JSON and check LOG
+dropped_lines before treating a serial excerpt as complete.
 
 ## Reading timing and counters
 

@@ -176,10 +176,17 @@ detection_report (void)
            " untracked=%" PRIu32 "\n",
            incident.incidents, incident.positive_windows,
            incident.repeated_windows, incident.untracked_windows);
+#if PORT_STORAGE
+    printf("EVID occupied=%" PRIu32 "/2 saved_total=%" PRIu32
+           " released=%" PRIu32 " ack_rejected=%" PRIu32 "\n",
+           evidence.occupied, evidence.saved, evidence.released,
+           evidence.ack_rejected);
+#else
     printf("EVID saved=%" PRIu32 "/2 full=%" PRIu32 " copy_errors=%" PRIu32
            " bytes_per_slot=%u\n",
            evidence.saved, evidence.full, evidence.copy_errors,
            (unsigned) sizeof(evidence_record_t));
+#endif
     printf("ALARM requested=%" PRIu32 " applied=%" PRIu32
            " gpio=%d events=%" PRIu32 " queue_drop=%" PRIu32
            " stack_used=%" PRIu32 "/2048\n",

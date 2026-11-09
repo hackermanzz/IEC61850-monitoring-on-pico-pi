@@ -14,7 +14,12 @@
 #include "capture_hw.h"
 #include "capture_pipe.h"
 #include "capture_phy.h"
+#if !PORT_STORAGE
 #include "capture_test.h" /* Core 0-only marked UDP batch accounting. */
+#endif
+#if PORT_STORAGE
+#include "../storage/storage.h"
+#endif
 #include "mdio_phy.h"
 #if PORT_DETECTION
 #include "../health/detection.h"
@@ -34,17 +39,19 @@ static atomic_uint g_prefix_ready;
 #if PORT_ANALYSIS
 static atomic_uint g_decode_max_us;
 #endif
-static uint32_t               g_prefix[16];
-static uint32_t               g_prefix_count;
-static uint32_t               g_prefix_words;
-static uint32_t               g_tail[16];
-static uint32_t               g_tail_count;
-static uint32_t               g_crs_high_samples;
-static uint32_t               g_rxd_set_bits;
-static capture_raw_t          g_first_meta;
-static capture_signal_run_t   g_signal_runs[CAPTURE_TRACE_MAX_RUNS];
-static size_t                 g_signal_run_count;
+static uint32_t             g_prefix[16];
+static uint32_t             g_prefix_count;
+static uint32_t             g_prefix_words;
+static uint32_t             g_tail[16];
+static uint32_t             g_tail_count;
+static uint32_t             g_crs_high_samples;
+static uint32_t             g_rxd_set_bits;
+static capture_raw_t        g_first_meta;
+static capture_signal_run_t g_signal_runs[CAPTURE_TRACE_MAX_RUNS];
+static size_t               g_signal_run_count;
+#if !PORT_STORAGE
 static capture_test_tracker_t g_test_tracker;
+#endif
 
 static void capture_app_worker(INT code, void * p_exinf);
 static bool capture_app_phy(uint8_t * p_address);
@@ -52,6 +59,7 @@ static bool capture_app_link(uint8_t address, uint16_t * p_bmsr,
                              uint16_t * p_special);
 static void capture_app_process(const capture_raw_t * p_raw);
 static void capture_app_report(uint32_t delivered);
+#if !PORT_STORAGE
 static void capture_app_report_tests(void);
 
 /** @brief Report only marked batches; background traffic cannot inflate them.
@@ -85,6 +93,8 @@ capture_app_report_tests (void)
     printf("TEST rejected=%" PRIu32 " run_capacity_drops=%" PRIu32 "\n",
            g_test_tracker.rejected, g_test_tracker.run_capacity_drops);
 }
+
+#endif /* !PORT_STORAGE */
 
 /** @brief Advertise only 10BASE-T after checking the actual PHY identity. */
 static bool
@@ -314,7 +324,9 @@ capture_app_report (uint32_t delivered)
            hw.dma_full, hw.fifo_stall, hw.pauses, hw.armed_while_high,
            hw.max_rearm_us, pipe.pool_drops, pipe.queue_drops,
            pipe.ownership_errors, pipe.loss_generation);
+#if !PORT_STORAGE
     capture_app_report_tests();
+#endif
 #if PORT_ANALYSIS
     analysis_port_stats_t analysis = {0};
     iec_rules_stats_t     rules    = {0};
@@ -384,6 +396,9 @@ capture_app_report (uint32_t delivered)
 #if PORT_DETECTION
     detection_report();
     console_report();
+#if PORT_STORAGE
+    storage_report();
+#endif
 #endif
 }
 
@@ -416,8 +431,13 @@ capture_app_task (INT start_code, void * p_exinf)
 #endif
 #if PORT_ANALYSIS
 #if PORT_DETECTION
+#if PORT_STORAGE
+    printf("Pico 2 W micro T-Kernel v0.8-dev3 storage. watchdog_reboot=%u\n",
+           watchdog_caused_reboot() ? 1u : 0u);
+#else
     printf("Pico 2 W micro T-Kernel v0.7-dev2 detection. watchdog_reboot=%u\n",
            watchdog_caused_reboot() ? 1u : 0u);
+#endif
 #else
     printf("Pico 2 W micro T-Kernel v0.6-dev3 analysis.\n");
 #endif
@@ -446,7 +466,15 @@ capture_app_task (INT start_code, void * p_exinf)
 #else
     printf("Pico 2 W micro T-Kernel v0.5-dev7-r1 capture.\n");
 #endif
+#if PORT_STORAGE
+    if (!storage_init())
+    {
+        printf("Storage queue initialization failed.\n");
+        tk_ext_tsk();
+    }
+#else
     capture_test_init(&g_test_tracker);
+#endif
     printf("Core 1: GP4/5/6 PIO+DMA RX; Core 0: MDIO/USB/consumer.\n");
     printf("10 Mbps only, clk_sys=%" PRIu32 " Hz; no traffic transmitted.\n",
            clock_get_hz(clk_sys));
@@ -493,6 +521,13 @@ capture_app_task (INT start_code, void * p_exinf)
         tk_ext_tsk();
     }
 #endif
+#if PORT_STORAGE
+    if (!storage_start())
+    {
+        printf("Storage task startup failed.\n");
+        tk_ext_tsk();
+    }
+#endif
     for (;;)
     {
 #if PORT_DETECTION
@@ -506,8 +541,10 @@ capture_app_task (INT start_code, void * p_exinf)
             analysis_port_observe(p_frame);
 #endif
             /* Observe while this consumer owns the FCS-verified frame. */
+#if !PORT_STORAGE
             (void) capture_test_observe(&g_test_tracker, p_frame->data,
                                         p_frame->length);
+#endif
             if (1u == delivered)
             {
                 printf("FIRST frame seq=%" PRIu32
@@ -525,6 +562,9 @@ capture_app_task (INT start_code, void * p_exinf)
         }
 #if PORT_ANALYSIS
         analysis_port_poll(time_us_64());
+#endif
+#if PORT_STORAGE
+        storage_poll();
 #endif
         if ((!b_prefix_printed)
             && (1u

@@ -1,9 +1,10 @@
 param(
     [string] $SdkPath = (Join-Path $env:USERPROFILE '.pico-sdk/sdk/2.3.1'),
-    [ValidateSet('diagnostic', 'kernel', 'smp', 'capture', 'analysis', 'detection')]
+    [ValidateSet('diagnostic', 'kernel', 'smp', 'capture', 'analysis', 'detection', 'storage')]
     [string] $Profile = 'diagnostic',
     [ValidateSet(-1, 19)] [int] $AlarmGpio = -1,
     [switch] $WatchdogReset,
+    [switch] $SdPinsConfigured,
     [ValidateSet('none', 'consumer', 'worker', 'alarm')]
     [string] $StallTask = 'none',
     [ValidateRange(1000, 600000)] [int] $StallAfterMs = 10000
@@ -32,17 +33,22 @@ try {
     $env:PICO_SDK_PATH = $SdkPath
     $buildDirectory = Join-Path $PSScriptRoot "build/$Profile"
     $kernelOption = if ($Profile -ne 'diagnostic') { 'ON' } else { 'OFF' }
-    $smpOption = if ($Profile -in @('smp', 'capture', 'analysis', 'detection')) { 'ON' } else { 'OFF' }
-    $captureOption = if ($Profile -in @('capture', 'analysis', 'detection')) { 'ON' } else { 'OFF' }
-    $analysisOption = if ($Profile -in @('analysis', 'detection')) { 'ON' } else { 'OFF' }
-    $detectionOption = if ($Profile -eq 'detection') { 'ON' } else { 'OFF' }
+    $smpOption = if ($Profile -in @('smp', 'capture', 'analysis', 'detection', 'storage')) { 'ON' } else { 'OFF' }
+    $captureOption = if ($Profile -in @('capture', 'analysis', 'detection', 'storage')) { 'ON' } else { 'OFF' }
+    $analysisOption = if ($Profile -in @('analysis', 'detection', 'storage')) { 'ON' } else { 'OFF' }
+    $detectionOption = if ($Profile -in @('detection', 'storage')) { 'ON' } else { 'OFF' }
     $watchdogOption = if ($WatchdogReset) { 'ON' } else { 'OFF' }
     $stallOwner = @('consumer', 'worker', 'alarm').IndexOf($StallTask)
-    if (($Profile -ne 'detection') -and
+    if (($Profile -notin @('detection', 'storage')) -and
         (($AlarmGpio -ne -1) -or $WatchdogReset -or ($StallTask -ne 'none'))) {
         throw 'Alarm/watchdog/stall settings require -Profile detection.'
     }
-    $imageName = if ($Profile -eq 'detection') {
+    if ($SdPinsConfigured -and $Profile -ne 'storage') { throw 'SD settings require -Profile storage.' }
+    $storageOption = if ($Profile -eq 'storage') { 'ON' } else { 'OFF' }
+    $sdOption = if ($SdPinsConfigured) { 'ON' } else { 'OFF' }
+    $imageName = if ($Profile -eq 'storage') {
+        'pico2w_storage_v08'
+    } elseif ($Profile -eq 'detection') {
         'pico2w_detection_v07'
     } elseif ($Profile -eq 'analysis') {
         'pico2w_analysis_v06'
@@ -66,6 +72,7 @@ try {
         "-DPORT_KERNEL=$kernelOption" "-DPORT_SMP=$smpOption" `
         "-DPORT_CAPTURE=$captureOption" "-DPORT_ANALYSIS=$analysisOption" `
         "-DPORT_DETECTION=$detectionOption" `
+        "-DPORT_STORAGE=$storageOption" "-DSD_PINS_CONFIGURED=$sdOption" `
         "-DDETECTION_ALARM_GPIO=$AlarmGpio" `
         "-DDETECTION_WATCHDOG_RESET=$watchdogOption" `
         "-DDETECTION_STALL_OWNER=$stallOwner" `
@@ -78,13 +85,13 @@ try {
 
     $uf2Path = Join-Path $buildDirectory "$imageName.uf2"
     if (-not (Test-Path -LiteralPath $uf2Path)) { throw 'UF2 output is missing.' }
-    if ($Profile -in @('analysis', 'detection')) {
+    if ($Profile -in @('analysis', 'detection', 'storage')) {
         & python -B "$PSScriptRoot/testing/host/verify_analysis_image.py" `
             (Join-Path $buildDirectory "$imageName.elf") `
             --report (Join-Path $buildDirectory 'math-verification.json')
         if ($LASTEXITCODE -ne 0) { throw 'Analysis target math verification failed.' }
     }
-    if ($Profile -eq 'detection') {
+    if ($Profile -in @('detection', 'storage')) {
         & python -B "$PSScriptRoot/testing/host/verify_detection_ram.py" `
             (Join-Path $buildDirectory "$imageName.elf") `
             --report (Join-Path $buildDirectory 'ram-verification.json')

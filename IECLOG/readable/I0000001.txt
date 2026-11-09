@@ -1,0 +1,161 @@
+IEC 61850 incident report - GOOSE
+Source file: I0000001.BIN
+SHA256: 0fa93ffe82a5f55bf0f575ad65c37b8361145982705b9f7922c8f0c7b878ea4c
+Incident ID: 1 (IDs restart each boot)
+Incident time: 21.205700 seconds since boot
+This is uptime, not a calendar date/time.
+Model label: 1 (positive/anomalous)
+Model probability: 0.6447992920875549
+Model output on synthetic lab traffic is not proof of an attack.
+Rule reasons: 0x00000002
+Rules run in shadow mode; reason bit 0x2 means no trusted stream profile.
+Saved packets: 4
+Model inputs: 52
+
+Packet 1
+  Capture sequence: 180
+  Time since boot: 21.163652 s
+  Source MAC: 02:00:00:00:01:01
+  Destination MAC: 01:0c:cd:01:00:01
+  APPID: 0x1001
+  Stream identity: 'pico2lab/LLN0$GO$test'
+  stNum: 1; sqNum: 0
+  First boolean value: True
+  Other value words are reserved for this GOOSE format.
+  Exact value words: 00000001 00000000 00000000 00000000 00000000 00000000
+  Raw packet length: 131 bytes (Ethernet FCS excluded)
+
+Packet 2
+  Capture sequence: 182
+  Time since boot: 21.177550 s
+  Source MAC: 02:00:00:00:01:01
+  Destination MAC: 01:0c:cd:01:00:01
+  APPID: 0x1001
+  Stream identity: 'pico2lab/LLN0$GO$test'
+  stNum: 1; sqNum: 1
+  First boolean value: True
+  Other value words are reserved for this GOOSE format.
+  Exact value words: 00000001 00000000 00000000 00000000 00000000 00000000
+  Raw packet length: 131 bytes (Ethernet FCS excluded)
+
+Packet 3
+  Capture sequence: 184
+  Time since boot: 21.191852 s
+  Source MAC: 02:00:00:00:01:01
+  Destination MAC: 01:0c:cd:01:00:01
+  APPID: 0x1001
+  Stream identity: 'pico2lab/LLN0$GO$test'
+  stNum: 1; sqNum: 2
+  First boolean value: True
+  Other value words are reserved for this GOOSE format.
+  Exact value words: 00000001 00000000 00000000 00000000 00000000 00000000
+  Raw packet length: 131 bytes (Ethernet FCS excluded)
+
+Packet 4
+  Capture sequence: 186
+  Time since boot: 21.205700 s
+  Source MAC: 02:00:00:00:01:01
+  Destination MAC: 01:0c:cd:01:00:01
+  APPID: 0x1001
+  Stream identity: 'pico2lab/LLN0$GO$test'
+  stNum: 1; sqNum: 3
+  First boolean value: True
+  Other value words are reserved for this GOOSE format.
+  Exact value words: 00000001 00000000 00000000 00000000 00000000 00000000
+  Raw packet length: 131 bytes (Ethernet FCS excluded)
+
+Model inputs (names from the current model schema; __mean/max/last/std are window statistics)
+  [00] dt__mean = 0.010511999949812889
+  [01] dt__max = 0.014302000403404236
+  [02] dt__last = 0.013848000206053257
+  [03] dt__std = 0.006071658339351416
+  [04] dt_ratio__mean = 1.002799153327942
+  [05] dt_ratio__max = 1.029068946838379
+  [06] dt_ratio__last = 0.9821276664733887
+  [07] dt_ratio__std = 0.016830649226903915
+  [08] stnum_delta_abs__mean = 0.0
+  [09] stnum_delta_abs__max = 0.0
+  [10] stnum_delta_abs__last = 0.0
+  [11] stnum_delta_abs__std = 0.0
+  [12] stnum_back__mean = 0.0
+  [13] stnum_back__max = 0.0
+  [14] stnum_back__last = 0.0
+  [15] stnum_back__std = 0.0
+  [16] stnum_jump__mean = 0.0
+  [17] stnum_jump__max = 0.0
+  [18] stnum_jump__last = 0.0
+  [19] stnum_jump__std = 0.0
+  [20] sqnum_delta_abs__mean = 0.75
+  [21] sqnum_delta_abs__max = 1.0
+  [22] sqnum_delta_abs__last = 1.0
+  [23] sqnum_delta_abs__std = 0.4330126941204071
+  [24] sqnum_back__mean = 0.0
+  [25] sqnum_back__max = 0.0
+  [26] sqnum_back__last = 0.0
+  [27] sqnum_back__std = 0.0
+  [28] publisher_change__mean = 0.0
+  [29] publisher_change__max = 0.0
+  [30] publisher_change__last = 0.0
+  [31] publisher_change__std = 0.0
+  [32] history_ready__mean = 0.75
+  [33] history_ready__max = 1.0
+  [34] history_ready__last = 1.0
+  [35] history_ready__std = 0.4330126941204071
+  [36] age_since_any_sv_frame__mean = 2.5052719116210938
+  [37] age_since_any_sv_frame__max = 10.0
+  [38] age_since_any_sv_frame__last = 0.007003000006079674
+  [39] age_since_any_sv_frame__std = 4.327083110809326
+  [40] data_boolean_true__mean = 1.0
+  [41] data_boolean_true__max = 1.0
+  [42] data_boolean_true__last = 1.0
+  [43] data_boolean_true__std = 0.0
+  [44] data_boolean_missing__mean = 0.0
+  [45] data_boolean_missing__max = 0.0
+  [46] data_boolean_missing__last = 0.0
+  [47] data_boolean_missing__std = 0.0
+  [48] data_boolean_changed__mean = 0.0
+  [49] data_boolean_changed__max = 0.0
+  [50] data_boolean_changed__last = 0.0
+  [51] data_boolean_changed__std = 0.0
+
+Raw Ethernet packets (hex; retained for detailed analysis)
+Packet 1:
+  0000: 01 0c cd 01 00 01 02 00 00 00 01 01 88 b8 10 01
+  0010: 00 75 00 00 00 00 61 6b 80 15 70 69 63 6f 32 6c
+  0020: 61 62 2f 4c 4c 4e 30 24 47 4f 24 74 65 73 74 81
+  0030: 04 00 00 07 d0 82 12 70 69 63 6f 32 6c 61 62 2f
+  0040: 4c 4c 4e 30 24 64 61 74 61 83 0b 70 69 63 6f 32
+  0050: 2d 67 6f 6f 73 65 84 08 65 53 f1 01 00 00 00 00
+  0060: 85 04 00 00 00 01 86 04 00 00 00 00 87 01 00 88
+  0070: 04 00 00 00 01 89 01 00 8a 04 00 00 00 01 ab 03
+  0080: 83 01 01
+Packet 2:
+  0000: 01 0c cd 01 00 01 02 00 00 00 01 01 88 b8 10 01
+  0010: 00 75 00 00 00 00 61 6b 80 15 70 69 63 6f 32 6c
+  0020: 61 62 2f 4c 4c 4e 30 24 47 4f 24 74 65 73 74 81
+  0030: 04 00 00 07 d0 82 12 70 69 63 6f 32 6c 61 62 2f
+  0040: 4c 4c 4e 30 24 64 61 74 61 83 0b 70 69 63 6f 32
+  0050: 2d 67 6f 6f 73 65 84 08 65 53 f1 01 00 00 00 00
+  0060: 85 04 00 00 00 01 86 04 00 00 00 01 87 01 00 88
+  0070: 04 00 00 00 01 89 01 00 8a 04 00 00 00 01 ab 03
+  0080: 83 01 01
+Packet 3:
+  0000: 01 0c cd 01 00 01 02 00 00 00 01 01 88 b8 10 01
+  0010: 00 75 00 00 00 00 61 6b 80 15 70 69 63 6f 32 6c
+  0020: 61 62 2f 4c 4c 4e 30 24 47 4f 24 74 65 73 74 81
+  0030: 04 00 00 07 d0 82 12 70 69 63 6f 32 6c 61 62 2f
+  0040: 4c 4c 4e 30 24 64 61 74 61 83 0b 70 69 63 6f 32
+  0050: 2d 67 6f 6f 73 65 84 08 65 53 f1 01 00 00 00 00
+  0060: 85 04 00 00 00 01 86 04 00 00 00 02 87 01 00 88
+  0070: 04 00 00 00 01 89 01 00 8a 04 00 00 00 01 ab 03
+  0080: 83 01 01
+Packet 4:
+  0000: 01 0c cd 01 00 01 02 00 00 00 01 01 88 b8 10 01
+  0010: 00 75 00 00 00 00 61 6b 80 15 70 69 63 6f 32 6c
+  0020: 61 62 2f 4c 4c 4e 30 24 47 4f 24 74 65 73 74 81
+  0030: 04 00 00 07 d0 82 12 70 69 63 6f 32 6c 61 62 2f
+  0040: 4c 4c 4e 30 24 64 61 74 61 83 0b 70 69 63 6f 32
+  0050: 2d 67 6f 6f 73 65 84 08 65 53 f1 01 00 00 00 00
+  0060: 85 04 00 00 00 01 86 04 00 00 00 03 87 01 00 88
+  0070: 04 00 00 00 01 89 01 00 8a 04 00 00 00 01 ab 03
+  0080: 83 01 01
