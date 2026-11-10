@@ -1,23 +1,49 @@
 # Pico 2 W port
 
 Seven build profiles target Pico 2 W / RP2350 Arm Secure: SDK diagnostic,
-single-core micro T-Kernel v0.3-r1, dual-core v0.4-dev2 acceptance,
-**v0.5-dev7-r1 capture**, **v0.6-dev3 analysis/rules/RF**, and
-**v0.7-dev2 detection/alarm/supervision**, and
-**v0.8-dev2 SD incident storage**.
+single-core micro T-Kernel v0.3-r1, dual-core v0.4-dev2, v0.5 capture,
+v0.6 analysis/rules/RF, v0.7 detection/alarm/supervision, and
+**v0.8.0 SD incident evidence and compact investigation logs**.
 
-v0.8 now has a separate `storage` profile: a low-priority SD writer, copied
-256-byte messages, FAT16/FAT32 files and SPI DMA sector transfers. The image
-builds within the original RAM ceiling. Maker Pi Pico carrier identity is now
-confirmed: `-SdPinsConfigured` enables its built-in SD slot using SPI1/DMA.
-Omit that flag to keep SD pins disabled. See the
-[storage feature guide](app_program/storage/README.md). Dev2 mixed board logs now
-confirm two incident writes with `durable=2 failed=0`, zero SD timeouts and both
-evidence slots released. Actual card-file readback
-also passes:the latest GOOSE/SV pair reproduces its saved model inputs and
-results. **Basic v0.8 functionality is complete for the supplied lab workload.**
-The PC reader can also generate readable TXT reports while preserving BIN evidence. Feature development is
-active; extended v0.7 stress/soak qualification is deferred by user preference.
+The v0.8 feature set is finalized for user review. The `storage` profile adds
+SPI1/DMA SD storage to the existing GOOSE/SV detector:
+
+- Bounded copied chunks to the lower-priority S1 writer.
+- FAT16/FAT32 exclusive new `.BIN` + `.LOG` pairs under `IECLOG`.
+- Four original packets and all model inputs retained in BIN; compact IRTLOG/1
+  summaries retain timing, stream/counter/value information, model/rule results,
+  device/software identity and the BIN SHA256, without hex/features/debug dumps.
+- Successful sync/close of both files required before a matching incident/slot
+  ACK releases evidence. Failure retains evidence and detection continues.
+- Confirmed Maker Pi Pico onboard slot on GP10-GP15, enabled explicitly with
+  `-SdPinsConfigured`; capture's DMA/IRQ ownership remains separate.
+
+Build the finalized image from the port directory:
+
+```powershell
+.\run_these.ps1 -Profile storage -AlarmGpio 19 -SdPinsConfigured
+```
+
+Board-tested dev3 reports two completed pairs, no SD errors/timeouts and both
+evidence slots released. Dev2 BIN files have also been read back and replayed
+through the production analyzer, reproducing all latest GOOSE/SV inputs/results.
+The final version changes metadata only; actual dev3 LOG file contents and
+digests remain part of the user's final look-through. No repeat traffic round
+is required to finalize features. See the [storage guide](app_program/storage/README.md)
+for formats, build output and the bounded resource/incident policies.
+
+The GP19 SD-enabled profile reserves **213844/216064 bytes**, leaving2220bytes,
+without reducing model/history/evidence capacity. The storage profile omits only
+the marked-UDP test tracker. Acquisition gaps, unsynchronized UTC, unconfigured
+SV units and deferred stress/soak/slow/full/removed-card qualification remain
+explicit limits; this feature milestone does not claim full system qualification.
+Existing NOOBS files are never opened for replacement.
+
+Repository note: the storage implementation lives in `app_program/storage/`.
+Existing ignore rules keep `third_party/`, `platform/` and `testing/`
+local; they are needed for builds/checks and a fresh clone lacks them. No ignore
+exceptions or force-adds were introduced. Generated previews are optional lab
+artifacts, not required firmware source.
 
 v0.7 has a separate `detection` profile with single-protocol incidents,
 two full-window evidence slots, copied alarm events and task-progress
@@ -188,7 +214,7 @@ firmware measurements do not qualify this port.
 | **v0.5 — Capture acquisition and handoff** | S2 implemented in its own SMP profile: 10 Mbps PHY configuration/readback, three-pin PIO sampling and qualified low-tail detector, DMA double raw buffers, bounded decoder/FCS, kernel frame pool and non-waiting pointer queue, timestamps and loss generation. | Host tests and real-kernel pool/queue board checks pass;343 CRC-valid frames delivered. Compare real bytes/FCS and raw timing; test DMA overrun and exhaustion, then measure sustained/burst capture against independent offered-frame counts. |
 | **v0.6 — Analysis parity** | S3: port parsing, per-stream state, features, generated RF models and shadow rules. Preserve four-frame windows/stride two, 128-sample SV history, 52 GOOSE/72 SV inputs, four GOOSE/one SV streams and all four raw evidence frames. Reconcile shared headers/APIs. | Host replay matches reference features/model outputs; malformed frames and loss/restart paths are checked. Target build and timed board replay establish inference cost and stack/RAM use. Confirm actual SV payload schema before claiming publisher compatibility. |
 | **v0.7 — Detection, alarm and supervision** | S3 owns incident state; S4 provides bounded evidence storage and one watchdog supervisor; S5 drives the alarm. Either GOOSE or SV alone can create an incident. Add copied output queues, progress telemetry, evidence exhaustion policy and arrival-to-alarm timestamps. | GOOSE-only, SV-only and mixed cases activate the LED. Full/slow output sinks and long attacks do not stop detection. Inject a software task stall and distinguish healthy idle. Measure complete latency including window collection. |
-| **v0.8 - SD incident records with DMA** | Implemented in the separate storage profile: S1 FAT16/32 writer, copied chunks, full evidence serialization, matched completion ACKs and SPI DMA. GP10-GP15 reserved; Maker Pi Pico mapping confirmed; explicit -SdPinsConfigured enables the onboard slot. | Build/RAM/software-math and focused offline file/ACK checks pass. Next: one physical incident file after wiring confirmation. Extended combined stress/soak checks deferred. Existing NOOBS files protected by exclusive new IECLOG names. |
+| **v0.8.0 - SD evidence and IRT logs (features finalized)** | Implemented in the separate storage profile: S1 FAT16/32 writer, copied chunks, full evidence serialization, matched completion ACKs and SPI DMA. GP10-GP15 reserved; Maker Pi Pico mapping confirmed; explicit -SdPinsConfigured enables the onboard slot. | Build/RAM/software-math and focused offline file/ACK checks pass. Next: one physical incident file after wiring confirmation. Extended combined stress/soak checks deferred. Existing NOOBS files protected by exclusive new IECLOG names. |
 | **v0.9 — Wi-Fi and Telegram** | S5: adapt existing HTTPS/parser fixes to the qualified RP2350 runtime. Preserve one radio/lwIP owner, bounded notification queues/retries, independent alarm path and peak TLS allocation telemetry. Investigate driver/runtime feasibility during v0.3–v0.4. | Board tests cover successful delivery, disconnect, timeout, TLS failure and alert backlog with capture/analysis active. Record CPU, stack and heap peaks. Keep credentials outside source/export artifacts. |
 | **v1.0 — Qualified combined system** | Integrate all required subsystems; fix versions/configuration and document workload, wiring, model/publisher schema, stream admission and evidence policies. | Demonstrate >=99% capture for the agreed sustained/burst workload, agreed arrival-to-LED latency, held-out accuracy and <=216064 bytes total peak RAM with required services enabled. Include startup, long attacks, queue exhaustion, SD/network faults and soak testing. Publish limits and reproducible results. |
 | **v1.1 — Optional optimization** | Evaluate inference gating, stream expiry/admission improvements, model retraining or feature changes, and optional buzzer after the baseline is qualified. | Compare missed attacks, false alarms, latency, CPU and RAM against v1.0. Feature/history changes require retraining/re-export and replay. Enable gating only after explicit policy selection and evidence. |

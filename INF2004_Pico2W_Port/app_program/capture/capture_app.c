@@ -432,8 +432,8 @@ capture_app_task (INT start_code, void * p_exinf)
 #if PORT_ANALYSIS
 #if PORT_DETECTION
 #if PORT_STORAGE
-    printf("Pico 2 W micro T-Kernel v0.8-dev3 storage. watchdog_reboot=%u\n",
-           watchdog_caused_reboot() ? 1u : 0u);
+    printf("Pico 2 W micro T-Kernel v%s storage. watchdog_reboot=%u\n",
+           PICO_PROGRAM_VERSION_STRING, watchdog_caused_reboot() ? 1u : 0u);
 #else
     printf("Pico 2 W micro T-Kernel v0.7-dev2 detection. watchdog_reboot=%u\n",
            watchdog_caused_reboot() ? 1u : 0u);

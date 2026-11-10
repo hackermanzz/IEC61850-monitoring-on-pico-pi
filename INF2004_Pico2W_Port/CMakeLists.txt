@@ -11,6 +11,7 @@ option(PORT_SMP "Build the v0.4 dual-core course-kernel harness" OFF)
 option(PORT_CAPTURE "Build the v0.5 PIO/DMA receive pipeline" OFF)
 option(PORT_ANALYSIS "Build the v0.6 analyzer/rules/RF consumer" OFF)
 option(PORT_STORAGE "Build v0.8 SD incident records" OFF)
+set(PORT_STORAGE_VERSION "0.8.0")
 option(SD_PINS_CONFIGURED "Enable confirmed onboard SD wiring" OFF)
 # Maker Pi Pico carrier confirmed by the user. Its onboard slot supports SPI1
 # on GP10/11/12/15; GP13/14 remain SD inputs with pull-ups. Explicit opt-in

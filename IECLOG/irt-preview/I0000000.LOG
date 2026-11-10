@@ -1,0 +1,17 @@
+IRTLOG/1
+evidence=I0000000.BIN bytes=1308
+sha256=1d73fa53b3f63d77c79f33103409e34c62ea71b6b97890efa20e095dfc260819
+device=unrecorded writer_firmware=host-preview
+model_source_sha256=unavailable
+model_schema=82e705daa7f6d5cb5b9bf312c81cd51ce9eba385771c183e3eda5cfb71f3521b
+incident=1 id_scope=boot protocol=GOOSE label=1 verdict=model_anomaly score=0.665807 threshold=0.0261559
+time_basis=boot_uptime_us utc=unavailable incident_us=575532438
+rule_mode=shadow mask=0x00000002 findings=unconfigured_stream
+frames=4 model_inputs=52 exact_packets_and_inputs=BIN packet_format=ethernet_no_fcs display_digits=6
+value=first_boolean
+stream appid=0x1001 src=02:00:00:00:01:01 dst=01:0c:cd:01:00:01 id="pico2lab/LLN0$GO$test"
+packet seq=245 t_us=575491607 dt_us=- len=131 stNum=1 sqNum=0 value=true
+packet seq=247 t_us=575505188 dt_us=13581 len=131 stNum=1 sqNum=1 value=true
+packet seq=249 t_us=575519047 dt_us=13859 len=131 stNum=1 sqNum=2 value=true
+packet seq=251 t_us=575532438 dt_us=13391 len=131 stNum=1 sqNum=3 value=true
+END

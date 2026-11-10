@@ -1,0 +1,17 @@
+IRTLOG/1
+evidence=I0000002.BIN bytes=1196
+sha256=f570714281364d4b961ff8954d1e65bdd084b7e27d6eead9a676dc1946b67d5d
+device=unrecorded writer_firmware=host-preview
+model_source_sha256=unavailable
+model_schema=82e705daa7f6d5cb5b9bf312c81cd51ce9eba385771c183e3eda5cfb71f3521b
+incident=2 id_scope=boot protocol=SV label=1 verdict=model_anomaly score=0.981297 threshold=0.94522
+time_basis=boot_uptime_us utc=unavailable incident_us=21212556
+rule_mode=shadow mask=0x00000002 findings=unconfigured_stream
+frames=4 model_inputs=72 exact_packets_and_inputs=BIN packet_format=ethernet_no_fcs display_digits=6
+values=ch0..ch5 units=unrecorded
+stream appid=0x4001 src=02:00:00:00:01:02 dst=01:0c:cd:04:00:01 id="pico2lab-sv"
+packet seq=181 t_us=21170501 dt_us=- len=83 smpCnt=0 values=0,1.73205,2.59808,4.89859e-16,-4.33013,-5.19615
+packet seq=183 t_us=21184816 dt_us=14315 len=83 smpCnt=1 values=0.19509,1.89386,2.25552,-0.780361,-4.73465,-4.51104
+packet seq=185 t_us=21198697 dt_us=13881 len=83 smpCnt=2 values=0.382683,1.98289,1.82628,-1.53073,-4.95722,-3.65257
+packet seq=187 t_us=21212556 dt_us=13859 len=83 smpCnt=3 values=0.55557,1.99572,1.32687,-2.22228,-4.98929,-2.65373
+END
