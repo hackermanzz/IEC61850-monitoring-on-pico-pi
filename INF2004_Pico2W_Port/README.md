@@ -1,9 +1,22 @@
 # Pico 2 W port
 
-Seven build profiles target Pico 2 W / RP2350 Arm Secure: SDK diagnostic,
+Eight build profiles target Pico 2 W / RP2350 Arm Secure: SDK diagnostic,
 single-core micro T-Kernel v0.3-r1, dual-core v0.4-dev2, v0.5 capture,
 v0.6 analysis/rules/RF, v0.7 detection/alarm/supervision, and
-**v0.8.0 SD incident evidence and compact investigation logs**.
+**v0.8.0 SD incident evidence and compact investigation logs**, and
+**v0.9-dev2 Wi-Fi/Telegram integration**.
+
+The v0.9 `wifi` profile now builds capture/detection/SD plus the existing
+notification/parser code adapted to the current SDK. Full firmware and host
+checks pass; the dev2 board log demonstrates Wi-Fi/IP and automatic time
+synchronization, and the user confirms Telegram incident receipt during mixed
+traffic. This completes the remote-alert functional milestone; delivery latency,
+runtime TLS peaks and failure/recovery qualification remain open.
+See the [Wi-Fi setup and ownership guide](app_program/wifi/README.md). Blank
+settings leave the radio offline. Configure the private header, build and flash;
+UTC synchronizes automatically after Wi-Fi connects. The USB time command is
+an optional fallback, fixed in dev2. The separate v0.8 storage profile remains
+available.
 
 The v0.8 feature set is finalized for user review. The `storage` profile adds
 SPI1/DMA SD storage to the existing GOOSE/SV detector:
@@ -32,7 +45,12 @@ digests remain part of the user's final look-through. No repeat traffic round
 is required to finalize features. See the [storage guide](app_program/storage/README.md)
 for formats, build output and the bounded resource/incident policies.
 
-The GP19 SD-enabled profile reserves **213844/216064 bytes**, leaving2220bytes,
+The Pico 2 W RAM budget is now **479232 bytes (468 KiB)**: 90% of its
+532480-byte (520 KiB) SRAM, leaving 53248 bytes (52 KiB) reserved. This user-approved
+budget supersedes the earlier 216064-byte limit. It covers the complete system,
+including static data, all stacks, kernel objects and peak network/TLS allocation.
+The last GP19 SD-enabled image reserves **213844 bytes**, leaving **265388 bytes**
+under the new budget (about 40.2% of physical SRAM used),
 without reducing model/history/evidence capacity. The storage profile omits only
 the marked-UDP test tracker. Acquisition gaps, unsynchronized UTC, unconfigured
 SV units and deferred stress/soak/slow/full/removed-card qualification remain
@@ -44,6 +62,24 @@ Existing ignore rules keep `third_party/`, `platform/` and `testing/`
 local; they are needed for builds/checks and a fresh clone lacks them. No ignore
 exceptions or force-adds were introduced. Generated previews are optional lab
 artifacts, not required firmware source.
+
+Non-diagnostic builds now check the local recovery archive at
+`build/local-dependencies/pico2-sources.zip` before configuration and restore
+missing ignored dependency files only. Existing files and private configuration
+are preserved. To refresh this local backup after changing dependency sources,
+run `python -B tools/local_dependencies.py --backup` from the port directory.
+The archive remains ignored and is not included in a fresh clone; it is local
+recovery, not dependency distribution. Restored FatFs files retain their original
+upstream bytes and match `third_party/fatfs/provenance.json` hashes.
+
+
+The Pico1 branch was selectively ported; its unrelated Git history was not merged.
+The radio uses SDK2.3.1 RP2350 support, one Core0owner, required TLS verification,
+a fixed96KiB arena and copied alerts. The full image reserves about394KB under
+the479232-byte ceiling, without reducing models/history/evidence. Missing local
+Pico2dependencies were recovered from a saved index snapshot; the RAM checker
+now enforces the new limit. See the [source review](reviews/wifi/README.md) and
+[current integration guide](app_program/wifi/README.md).
 
 v0.7 has a separate `detection` profile with single-protocol incidents,
 two full-window evidence slots, copied alarm events and task-progress
@@ -107,6 +143,7 @@ From this directory in PowerShell:
 .\run_these.ps1 -Profile analysis
 .\run_these.ps1 -Profile detection
 .\run_these.ps1 -Profile storage
+.\run_these.ps1 -Profile wifi
 ```
 
 The default profile is `diagnostic`. Outputs are separate:
@@ -119,6 +156,7 @@ The default profile is `diagnostic`. Outputs are separate:
 | analysis | `build/analysis/pico2w_analysis_v06.uf2` | Capture plus existing GOOSE/SV parsing, shadow rules, RF models, reference-derived startup self-check and analysis/stack counters. |
 | detection | `build/detection/pico2w_detection_v07.uf2` | v0.6 pipeline plus latched incidents, two evidence records, copied alarm events and a supervisor; GPIO/reset disabled by default. |
 | storage | `build/storage/pico2w_storage_v08.uf2` | v0.7 plus SD incident writer; SD pins disabled by default; -SdPinsConfigured enables the confirmed Maker Pi Pico slot. |
+| wifi | `build/wifi/pico2w_wifi_v09.uf2` | Combined storage/detection and one Core0 Wi-Fi/TLS owner; private credentials/trust root required; UTC is obtained automatically after Wi-Fi connects. Blank settings stay offline. |
 | smp | `build/smp/pico2w_kernel_smp_v04.uf2` | Original checks plus Core 1 affinity, delayed mailbox replies, shared counter and remote alarm/audits. |
 
 The script works from any working directory and uses installed SDK 2.3.1,
@@ -215,8 +253,8 @@ firmware measurements do not qualify this port.
 | **v0.6 — Analysis parity** | S3: port parsing, per-stream state, features, generated RF models and shadow rules. Preserve four-frame windows/stride two, 128-sample SV history, 52 GOOSE/72 SV inputs, four GOOSE/one SV streams and all four raw evidence frames. Reconcile shared headers/APIs. | Host replay matches reference features/model outputs; malformed frames and loss/restart paths are checked. Target build and timed board replay establish inference cost and stack/RAM use. Confirm actual SV payload schema before claiming publisher compatibility. |
 | **v0.7 — Detection, alarm and supervision** | S3 owns incident state; S4 provides bounded evidence storage and one watchdog supervisor; S5 drives the alarm. Either GOOSE or SV alone can create an incident. Add copied output queues, progress telemetry, evidence exhaustion policy and arrival-to-alarm timestamps. | GOOSE-only, SV-only and mixed cases activate the LED. Full/slow output sinks and long attacks do not stop detection. Inject a software task stall and distinguish healthy idle. Measure complete latency including window collection. |
 | **v0.8.0 - SD evidence and IRT logs (features finalized)** | Implemented in the separate storage profile: S1 FAT16/32 writer, copied chunks, full evidence serialization, matched completion ACKs and SPI DMA. GP10-GP15 reserved; Maker Pi Pico mapping confirmed; explicit -SdPinsConfigured enables the onboard slot. | Build/RAM/software-math and focused offline file/ACK checks pass. Next: one physical incident file after wiring confirmation. Extended combined stress/soak checks deferred. Existing NOOBS files protected by exclusive new IECLOG names. |
-| **v0.9 — Wi-Fi and Telegram** | S5: adapt existing HTTPS/parser fixes to the qualified RP2350 runtime. Preserve one radio/lwIP owner, bounded notification queues/retries, independent alarm path and peak TLS allocation telemetry. Investigate driver/runtime feasibility during v0.3–v0.4. | Board tests cover successful delivery, disconnect, timeout, TLS failure and alert backlog with capture/analysis active. Record CPU, stack and heap peaks. Keep credentials outside source/export artifacts. |
-| **v1.0 — Qualified combined system** | Integrate all required subsystems; fix versions/configuration and document workload, wiring, model/publisher schema, stream admission and evidence policies. | Demonstrate >=99% capture for the agreed sustained/burst workload, agreed arrival-to-LED latency, held-out accuracy and <=216064 bytes total peak RAM with required services enabled. Include startup, long attacks, queue exhaustion, SD/network faults and soak testing. Publish limits and reproducible results. |
+| **v0.9 — Wi-Fi and Telegram** | S5: dev2 selective port and automatic time implemented; full-build/host checks pass, and user confirms mixed-test Telegram receipt. Existing HTTPS/parser fixes use the SDK RP2350 runtime. Preserve one radio/lwIP owner, bounded notification queues/retries, independent alarm path and peak TLS allocation telemetry. Investigate driver/runtime feasibility during v0.3–v0.4. | Board tests cover successful delivery, disconnect, timeout, TLS failure and alert backlog with capture/analysis active. Record CPU, stack and heap peaks. Keep credentials outside source/export artifacts. |
+| **v1.0 — Qualified combined system** | Integrate all required subsystems; fix versions/configuration and document workload, wiring, model/publisher schema, stream admission and evidence policies. | Demonstrate >=99% capture for the agreed sustained/burst workload, agreed arrival-to-LED latency, held-out accuracy and <=479232 bytes total peak RAM with required services enabled. Include startup, long attacks, queue exhaustion, SD/network faults and soak testing. Publish limits and reproducible results. |
 | **v1.1 — Optional optimization** | Evaluate inference gating, stream expiry/admission improvements, model retraining or feature changes, and optional buzzer after the baseline is qualified. | Compare missed attacks, false alarms, latency, CPU and RAM against v1.0. Feature/history changes require retraining/re-export and replay. Enable gating only after explicit policy selection and evidence. |
 
 ### Subsystem responsibilities
@@ -287,25 +325,28 @@ they must each be checked with the combined system.
   agree a model/requirement change; a 100 ms status tick is not this deadline.
 - Agree evidence quotas, incident boundaries, retention, repeat alerts and stream
   expiry/admission. Exhausted evidence storage must allow continued detection.
-- Retain the **216064-byte total RAM ceiling**, including static buffers,
-  stacks, kernel objects, network buffers and peak TLS heap. Extra RP2350 RAM
-  does not automatically change the agreed application budget.
+- Keep total RAM at or below **479232 bytes (90% of Pico 2 W SRAM)**,
+  including static buffers, all stacks, kernel objects, network buffers and
+  peak TLS allocation. Preserve the remaining 52 KiB reserve. This supersedes
+  the previous 216064-byte budget by explicit user direction.
 - Keep rules in shadow mode and inference gating off. Skipped windows are
   unclassified; never automatically learn trust from live traffic. MMS support
   remains outside the current GOOSE/SV scope.
 
 ### Current next task
 
-Build and qualify `-Profile detection` following the
-[v0.7 procedure](app_program/health/README.md). This first candidate latches one
-incident per stream/boot and retains the first two complete evidence windows;
-exhaustion does not block detection. Alarm and supervisor preempt analysis on
-Core0; a lower-priority Core0 task drains complete diagnostic lines without
-formatting or making capture wait for USB. No additional Core1 service is
-introduced. The build checks reserved RAM
-against216064bytes, including a bounded libc heap and exception-stack
-reservations. Actual stack peaks and physical arrival-to-LED latency still need
-board evidence. GPIO output requires explicitly verified wiring; default is off.
+Finalize the v0.9 feature milestone: review the working dev2 source and setup,
+prepare stable version metadata/release notes, preserve known-working artifacts,
+and leave final review/commit/push to the user. Wi-Fi/IP, automatic time and
+Telegram receipt are functionally demonstrated; no repeat delivery test is needed
+solely to close that feature. The firmware currently remains0.9-dev2.
+
+For v1.0, prepare a reproducible dependency/source package without credentials
+(current ignored sources are not available in a fresh clone), state the intended
+workload and known limits, and complete focused combined reliability, capture
+loss/latency, detector accuracy and runtime resource qualification. The RAM
+checker enforces479232bytes; the combined static reservation is393940bytes.
+The preserved v0.8 image remains the fallback.
 
 The separate v0.6 analysis image/fallbacks remain available. Its board evidence
 includes sequential GOOSE/SV and2000/2000 submitted mixed frames at96.45 achieved

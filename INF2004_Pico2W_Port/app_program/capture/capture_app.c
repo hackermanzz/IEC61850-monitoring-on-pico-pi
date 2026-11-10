@@ -2,6 +2,9 @@
  * @brief Two-core capture bring-up with one console/MDIO owner on Core 0.
  */
 #include "capture_app.h"
+#if PORT_WIFI
+#include "../wifi/wifi_port.h"
+#endif
 
 #if PORT_CAPTURE
 #include <inttypes.h>  /* Portable diagnostic formats. */
@@ -398,6 +401,9 @@ capture_app_report (uint32_t delivered)
     console_report();
 #if PORT_STORAGE
     storage_report();
+#if PORT_WIFI
+    wifi_port_report();
+#endif
 #endif
 #endif
 }
@@ -431,7 +437,10 @@ capture_app_task (INT start_code, void * p_exinf)
 #endif
 #if PORT_ANALYSIS
 #if PORT_DETECTION
-#if PORT_STORAGE
+#if PORT_WIFI
+    printf("Pico 2 W micro T-Kernel v%s Wi-Fi/storage. watchdog_reboot=%u\n",
+           PICO_PROGRAM_VERSION_STRING, watchdog_caused_reboot() ? 1u : 0u);
+#elif PORT_STORAGE
     printf("Pico 2 W micro T-Kernel v%s storage. watchdog_reboot=%u\n",
            PICO_PROGRAM_VERSION_STRING, watchdog_caused_reboot() ? 1u : 0u);
 #else
@@ -476,7 +485,7 @@ capture_app_task (INT start_code, void * p_exinf)
     capture_test_init(&g_test_tracker);
 #endif
     printf("Core 1: GP4/5/6 PIO+DMA RX; Core 0: MDIO/USB/consumer.\n");
-    printf("10 Mbps only, clk_sys=%" PRIu32 " Hz; no traffic transmitted.\n",
+    printf("10 Mbps capture, clk_sys=%" PRIu32 " Hz; Ethernet RX only.\n",
            clock_get_hz(clk_sys));
     if ((!capture_pipe_init()) || (!capture_pipe_self_check()))
     {
@@ -528,6 +537,14 @@ capture_app_task (INT start_code, void * p_exinf)
         tk_ext_tsk();
     }
 #endif
+#if PORT_WIFI
+    if (!wifi_port_start())
+    {
+        printf("WIFI task startup failed; detection/storage continue.\n");
+    }
+    printf("WIFI: automatic time sync after connection; wait for up=1 and "
+           "utc=1.\n");
+#endif
     for (;;)
     {
 #if PORT_DETECTION
@@ -565,6 +582,9 @@ capture_app_task (INT start_code, void * p_exinf)
 #endif
 #if PORT_STORAGE
         storage_poll();
+#if PORT_WIFI
+        wifi_port_console();
+#endif
 #endif
         if ((!b_prefix_printed)
             && (1u

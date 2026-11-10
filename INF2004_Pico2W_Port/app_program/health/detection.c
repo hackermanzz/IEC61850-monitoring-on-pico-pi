@@ -2,6 +2,9 @@
  * @brief One Core0 watchdog supervisor observes three independent task beats.
  */
 #include "detection.h"
+#if PORT_WIFI
+#include "../wifi/wifi_port.h"
+#endif
 #include <inttypes.h>
 #include <stdatomic.h>
 #include <stdio.h>
@@ -90,6 +93,9 @@ detection_observe (const analyzer_result_t * p_result)
     if (incident_observe(p_result, time_us_64(), &event))
     {
         alarm_submit(&event);
+#if PORT_WIFI
+        wifi_port_submit(&event, p_result);
+#endif
     }
 }
 

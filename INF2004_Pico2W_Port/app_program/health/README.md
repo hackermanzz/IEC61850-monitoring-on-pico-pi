@@ -9,6 +9,11 @@ through these runs;2–3 pre-test diagnostic line drops remain explicit. Existin
 capture-rate shortfalls and watchdog/stall acceptance remain open.
 The separate `analysis` profile retains v0.6 behavior and its own output directory.
 
+The console replacement now forwards USB input to the original SDK backend.
+This fixes the dev1 Wi-Fi UTC command, which could not receive typed characters
+through an output-only replacement driver. Queued output ownership is unchanged;
+Wi-Fi dev2 normally obtains its clock automatically and needs no typed command.
+
 Think of capture as a conveyor, the analyzer as a collector that examines four
 items together, and evidence storage as two trays beside the conveyor. When the
 model reports a positive result, S3 records an incident and S5 latches the alarm.
@@ -114,7 +119,10 @@ This does not establish capture latency under USB service load. There are two me
 buffers (capture pointers and copied alarm events)
 and one fixed capture pool; existing kernel object limits remain unchanged.
 
-The build runner verifies reserved RAM against **216064 bytes**. Its report is
+The preserved builds verified reserved RAM against the former **216064-byte**
+limit. The user-approved Pico 2 W ceiling is now **479232 bytes**, 90% of520KiB,
+with52KiB reserved. The restored local checker reads config/ram_budget.h and
+now enforces the new limit. Its report is
 `build/detection/ram-verification.json`. It counts main RAM from the vector table
 through all RAM code/data/BSS/padding, a bounded 2048-byte libc heap, both SDK
 exception-stack reservations and any scratch sections. Static task stacks,
@@ -130,8 +138,8 @@ alarm, supervisor and USB drain watermarks remain estimates, requiring board
 stress tests. Current GP19 dev2 reserved RAM is214976/216064bytes, leaving1088;
 the dev1 baseline was211088bytes. The delta3888bytes includes the queue and
 new stack, not any reduction to model/history/evidence capacity.
-Future SD/TLS services require a new budget; the RP2350's extra RAM does not
-relax the agreed ceiling.
+Future SD/TLS services share the approved479232-byte combined budget; include
+their static resources and peak allocation rather than checking services alone.
 
 ### Capture-to-analysis SRAM
 

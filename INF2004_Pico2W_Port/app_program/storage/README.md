@@ -145,7 +145,11 @@ RAM for that boot. No extra stall/soak test sequence is required for this step.
 
 ## Memory and task ownership
 
-The GP19 finalized storage build reserves **213844/216064 bytes**, leaving 2220 bytes.
+The GP19 finalized storage build reserves **213844 bytes**. It was verified
+against the former216064-byte budget. The user-approved Pico 2 W policy is now
+**479232 bytes (90% of520KiB)**, leaving265388bytes below that ceiling.
+The preserved image is unchanged; the restored local checker now enforces
+the new limit from config/ram_budget.h.
 Dev2 reserves213204bytes; the native log extension adds640bytes.
 The rebuilt v0.7 profile also passes at 214992 bytes; its preserved board-tested
 image remains available.

@@ -19,9 +19,20 @@ static console_queue_t g_queue;
 _Alignas(8) static uint32_t g_stack[CONSOLE_STACK_WORDS];
 static atomic_uint g_stack_used;
 
+static int            console_in(char * p_text, int length);
 static void           console_out(const char * p_text, int length);
 static void           console_task(INT code, void * p_exinf);
-static stdio_driver_t g_driver = {.out_chars = console_out};
+static stdio_driver_t g_driver = {.out_chars = console_out,
+                                  .in_chars  = console_in};
+
+/* Driver registration replaces USB output, not the underlying USB transport.
+ * Forward input to that transport so consumer-side commands remain reachable.
+ */
+static int
+console_in (char * p_text, int length)
+{
+    return stdio_usb.in_chars(p_text, length);
+}
 
 static void
 console_out (const char * p_text, int length)

@@ -432,7 +432,8 @@ Image inspection confirms RP2350 Arm Secure, pico2_w and version 0.5-dev4.
 
 The isolated capture build's section sizes and final hashes are recorded in
 ignored `build/verification.json`. Those sizes do not establish total peak RAM
-or final application compliance with the 216064-byte ceiling. Runtime stacks,
+or final application compliance with the user-approved479232-byte ceiling
+(90% of Pico 2 W SRAM; supersedes the earlier216064-byte budget). Runtime stacks,
 SDK heap and later analysis/network/SD resources still need measurements.
 
 The next acceptance step is the manual board procedure in `testing/README.md`.

@@ -252,7 +252,8 @@ PIO selftest=15 expected=15 ...
    skipped0, stable stack headroom and no ownership errors. Save publisher settings,
    offered counts, CAP gaps/drops and processing maxima. Repeat with bursts and
    larger SV frames; the startup self-check is not a substitute for this wire test.
-5. Keep full analysis under the agreed216064-byte peak RAM ceiling. Static BSS
+5. Keep the complete system under the user-approved479232-byte peak RAM ceiling
+   (90% of Pico 2 W SRAM; supersedes216064bytes). Static BSS
    size alone does not qualify runtime peak, all stacks or later service budgets.
 
 Board self-check now passes; alternating mixed traffic, worst-case target timing/stack
